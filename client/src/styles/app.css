@@ -3309,3 +3309,34 @@ dialog.sheet::backdrop {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Bouton désactivé (musique coupée) : icône atténuée et barrée, pas seulement une couleur. */
+.icon-btn.is-off {
+  position: relative;
+  color: var(--text-3);
+}
+
+.icon-btn.is-off::after {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 0 2px var(--bg-1);
+}
+
+@media (max-width: 400px) {
+  .topbar .icon-btn {
+    width: 38px;
+    height: 38px;
+  }
+  .topbar-inner {
+    gap: 5px;
+  }
+  .topbar .timer {
+    width: 46px !important;
+    height: 46px !important;
+  }
+}

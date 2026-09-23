@@ -1,9 +1,10 @@
-import { LogOut, Volume2, VolumeX } from 'lucide-react';
+import { LogOut, Music, Volume2, VolumeX } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { GameView } from '../../../shared/types';
 import { Brand, Spinner } from '../components/Chrome';
 import { HelpButton } from '../components/Help';
 import { Sheet } from '../components/Sheet';
+import { setMusicEnabled, useAmbientMusic, useMusicEnabled } from '../lib/music';
 import { setMuted, useMuted } from '../lib/sound';
 import { leaveRoom } from '../net/controller';
 import { toast } from '../state/store';
@@ -11,6 +12,7 @@ import { GameScreen } from './game/Game';
 import { Lobby } from './Lobby';
 
 export function RoomScreen({ view, onLeft }: { view: GameView; onLeft: () => void }) {
+  useAmbientMusic();
   return view.phase === 'lobby' ? <Lobby view={view} onLeft={onLeft} /> : <GameScreen view={view} onLeft={onLeft} />;
 }
 
@@ -27,11 +29,29 @@ export function TopBar({ view, onLeft, children }: { view: GameView; onLeft: () 
             </span>
           </>
         )}
+        <MusicToggle />
         <SoundToggle />
         <HelpButton />
         <LeaveButton view={view} onLeft={onLeft} />
       </div>
     </header>
+  );
+}
+
+/** Musique d'ambiance : coupée ou relancée à tout moment, choix mémorisé sur cet appareil. */
+function MusicToggle() {
+  const on = useMusicEnabled();
+  return (
+    <button
+      type="button"
+      className={on ? 'icon-btn' : 'icon-btn is-off'}
+      aria-pressed={!on}
+      aria-label={on ? 'Couper la musique' : 'Remettre la musique'}
+      title={on ? 'Couper la musique' : 'Remettre la musique'}
+      onClick={() => setMusicEnabled(!on)}
+    >
+      <Music size={19} />
+    </button>
   );
 }
 
@@ -43,8 +63,8 @@ function SoundToggle() {
       type="button"
       className="icon-btn"
       aria-pressed={muted}
-      aria-label={muted ? 'Réactiver les sons' : 'Couper les sons'}
-      title={muted ? 'Réactiver les sons' : 'Couper les sons'}
+      aria-label={muted ? 'Réactiver le tic-tac' : 'Couper le tic-tac'}
+      title={muted ? 'Réactiver le tic-tac' : 'Couper le tic-tac'}
       onClick={() => setMuted(!muted)}
     >
       {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}

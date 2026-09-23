@@ -50,8 +50,24 @@ export function useMuted(): boolean {
   );
 }
 
+const readyListeners = new Set<() => void>();
+
+/** Contexte audio partagé (tic-tac et musique), ou null tant qu'aucun geste ne l'a débloqué. */
+export function audioContext(): AudioContext | null {
+  return ctx && ctx.state === 'running' ? ctx : null;
+}
+
+/** Prévient quand l'audio devient utilisable (premier geste de l'utilisateur). */
+export function onAudioReady(listener: () => void): () => void {
+  readyListeners.add(listener);
+  return () => readyListeners.delete(listener);
+}
+
 /** À appeler une fois : débloque l'audio au premier geste, comme l'exigent les navigateurs. */
 export function installAudioUnlock(): void {
+  const notify = () => {
+    for (const listener of readyListeners) listener();
+  };
   const unlock = () => {
     try {
       if (!ctx) {
@@ -59,7 +75,8 @@ export function installAudioUnlock(): void {
         if (!Ctor) return;
         ctx = new Ctor();
       }
-      if (ctx.state === 'suspended') void ctx.resume();
+      if (ctx.state === 'suspended') void ctx.resume().then(notify, () => {});
+      else notify();
     } catch {
       ctx = null;
     }
