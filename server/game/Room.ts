@@ -860,8 +860,10 @@ export class Room {
       const role = r.roles.get(viewerId);
       secret =
         role === 'mrwhite'
-          ? { kind: 'mrwhite' }
-          : { kind: 'word', word: role === 'civil' ? r.pair.civil : r.pair.undercover };
+          ? { kind: 'mrwhite', theme: r.pair.theme }
+          : role === 'civil'
+            ? { kind: 'word', word: r.pair.civil, description: r.pair.civilDescription }
+            : { kind: 'word', word: r.pair.undercover, description: r.pair.undercoverDescription };
     }
 
     let round: RoundView | null = null;

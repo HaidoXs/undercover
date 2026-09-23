@@ -37,7 +37,7 @@ export function guessMatches(guess: string, word: string): boolean {
   return g.length > 0 && g === foldForCompare(word);
 }
 
-function tokens(value: string): string[] {
+export function tokens(value: string): string[] {
   return foldForCompare(value)
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()

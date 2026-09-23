@@ -34,7 +34,11 @@ export interface PublicPlayer {
   role?: Role;
 }
 
-export type Secret = { kind: 'word'; word: string } | { kind: 'mrwhite' };
+/**
+ * Carte privée : envoyée uniquement à son propriétaire.
+ * Civils et Undercover reçoivent leur mot et sa description ; Mr. White reçoit seulement le thème commun.
+ */
+export type Secret = { kind: 'word'; word: string; description: string } | { kind: 'mrwhite'; theme: string };
 
 export interface ClueEntry {
   cycle: number;

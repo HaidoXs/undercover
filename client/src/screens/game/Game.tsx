@@ -196,13 +196,18 @@ function PlayersPanel({ view }: { view: GameView }) {
 export function ClueLog({ view, compact }: { view: GameView; compact?: boolean }) {
   const round = view.round as RoundView;
   const pmap = playersById(view);
-  const cycles = [...new Set(round.clues.map((c) => c.cycle))].sort((a, b) => b - a);
+  // Pendant les indices, le tour en cours est déjà présenté en cartes horizontales : on n'affiche ici que les tours précédents.
+  const duringClues = view.phase === 'clues';
+  const cycles = [...new Set(round.clues.map((c) => c.cycle))]
+    .filter((cycle) => !duringClues || cycle !== round.cycle)
+    .sort((a, b) => b - a);
+  if (duringClues && cycles.length === 0) return null;
 
   return (
     <section className="card card-tight" aria-labelledby="panel-clues">
       <div className="card-header" style={{ marginBottom: 10 }}>
         <h2 id="panel-clues" className="card-title">
-          <MessageSquareQuote size={18} /> Historique des indices
+          <MessageSquareQuote size={18} /> {duringClues ? 'Tours précédents' : 'Historique des indices'}
         </h2>
       </div>
       {cycles.length === 0 ? (

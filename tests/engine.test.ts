@@ -151,10 +151,11 @@ describe('attribution secrète', () => {
       const view = s.room.viewFor(id, s.now.t);
       const role = r.roles.get(id)!;
       if (role === 'mrwhite') {
-        expect(view.me.secret).toEqual({ kind: 'mrwhite' });
+        expect(view.me.secret).toEqual({ kind: 'mrwhite', theme: r.pair.theme });
       } else {
         expect(view.me.secret?.kind).toBe('word');
-        const word = (view.me.secret as { word: string }).word;
+        const { word, description } = view.me.secret as { word: string; description: string };
+        expect(description).toBe(role === 'civil' ? r.pair.civilDescription : r.pair.undercoverDescription);
         if (!words.has(role)) words.set(role, new Set());
         words.get(role)!.add(word);
       }
@@ -175,6 +176,9 @@ describe('attribution secrète', () => {
       const role = r.roles.get(id);
       if (role !== 'civil') expect(json).not.toContain(r.pair.civil);
       if (role !== 'undercover') expect(json).not.toContain(r.pair.undercover);
+      if (role !== 'civil') expect(json).not.toContain(r.pair.civilDescription);
+      if (role !== 'undercover') expect(json).not.toContain(r.pair.undercoverDescription);
+      if (role !== 'mrwhite') expect(json).not.toContain(r.pair.theme);
       expect(json).not.toMatch(/"role":/);
       expect(json).not.toContain(r.pair.packName);
     }

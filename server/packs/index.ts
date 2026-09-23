@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { PackMeta } from '../../shared/types';
-import { foldForCompare } from '../text';
+import { clueRevealsWord, foldForCompare, tokens } from '../text';
 import animaux from './animaux';
 import animeManga from './anime-manga';
 import chanteurs from './chanteurs';
@@ -10,7 +10,7 @@ import jeuxVideo from './jeux-video';
 import nourriture from './nourriture';
 import objets from './objets';
 import rapFr from './rap-fr';
-import type { WordPack } from './types';
+import type { WordPack, WordPair } from './types';
 import voyage from './voyage';
 
 /**
@@ -59,6 +59,10 @@ export interface DrawnPair {
   packName: string;
   civil: string;
   undercover: string;
+  civilDescription: string;
+  undercoverDescription: string;
+  /** Thème commun, réservé à Mr. White. */
+  theme: string;
 }
 
 /**
@@ -66,7 +70,7 @@ export interface DrawnPair {
  * dans le salon tant que la réserve n'est pas épuisée. Le mot des Civils est tiré au sort.
  */
 export function drawPair(packIds: readonly string[], used: Set<string>): DrawnPair {
-  const pool: { id: string; pack: WordPack; pair: readonly [string, string] }[] = [];
+  const pool: { id: string; pack: WordPack; pair: WordPair }[] = [];
   for (const packId of packIds) {
     const pack = PACKS_BY_ID.get(packId);
     if (!pack) continue;
@@ -81,14 +85,32 @@ export function drawPair(packIds: readonly string[], used: Set<string>): DrawnPa
   }
   const pick = available[randomInt(available.length)];
   used.add(pick.id);
-  const swap = randomInt(2) === 1;
+  const [civil, undercover] = randomInt(2) === 1 ? [pick.pair.b, pick.pair.a] : [pick.pair.a, pick.pair.b];
   return {
     id: pick.id,
     packId: pick.pack.id,
     packName: pick.pack.name,
-    civil: swap ? pick.pair[1] : pick.pair[0],
-    undercover: swap ? pick.pair[0] : pick.pair[1],
+    civil: civil.word,
+    undercover: undercover.word,
+    civilDescription: civil.description,
+    undercoverDescription: undercover.description,
+    theme: pick.pair.theme,
   };
+}
+
+const ROLE_WORDS = ['civil', 'civils', 'undercover', 'intrus', 'mr white', 'imposteur'];
+
+/** Mots significatifs (4 lettres et plus) d'un mot secret. */
+function keyTokens(word: string): string[] {
+  return tokens(word).filter((t) => t.length >= 4);
+}
+
+/** Vrai si le texte cite le mot, ou l'un de ses termes distinctifs absents du mot autorisé. */
+function mentions(text: string, word: string, allowed = ''): boolean {
+  if (clueRevealsWord(text, word)) return true;
+  const own = new Set(tokens(allowed));
+  const textTokens = new Set(tokens(text));
+  return keyTokens(word).some((t) => !own.has(t) && textTokens.has(t));
 }
 
 /** Contrôles de contenu : utilisés par les tests et au démarrage du serveur. */
@@ -103,15 +125,30 @@ export function packIssues(packs: readonly WordPack[] = PACKS): string[] {
     if (pack.pairs.length < MIN_PAIRS_PER_PACK) {
       issues.push(`${pack.name} : ${pack.pairs.length} paires (minimum ${MIN_PAIRS_PER_PACK})`);
     }
-    for (const [a, b] of pack.pairs) {
-      const fa = foldForCompare(a);
-      const fb = foldForCompare(b);
-      if (!fa || !fb) issues.push(`${pack.name} : mot vide dans « ${a} / ${b} »`);
-      if (fa === fb) issues.push(`${pack.name} : paire identique « ${a} / ${b} »`);
+    for (const { theme, a, b } of pack.pairs) {
+      const label = `${pack.name} « ${a.word} / ${b.word} »`;
+      const fa = foldForCompare(a.word);
+      const fb = foldForCompare(b.word);
+      if (!fa || !fb) issues.push(`${label} : mot vide`);
+      if (fa === fb) issues.push(`${label} : paire identique`);
       const key = [fa, fb].sort().join(' | ');
       const seen = pairKeys.get(key);
-      if (seen) issues.push(`Paire en double « ${a} / ${b} » (${seen} et ${pack.name})`);
+      if (seen) issues.push(`${label} : paire en double (${seen})`);
       pairKeys.set(key, pack.name);
+
+      // Descriptions : privées, factuelles, sans l'autre mot ni allusion à un rôle.
+      for (const [own, other] of [[a, b], [b, a]] as const) {
+        const d = own.description.trim();
+        if (d.length < 15 || d.length > 110) issues.push(`${label} : description de « ${own.word} » de ${d.length} caractères (15 à 110)`);
+        if (mentions(d, other.word, own.word)) issues.push(`${label} : la description de « ${own.word} » évoque « ${other.word} »`);
+        if (ROLE_WORDS.some((r) => clueRevealsWord(d, r))) issues.push(`${label} : la description de « ${own.word} » évoque un rôle`);
+      }
+
+      // Thème de Mr. White : commun, large, sans mot ni terme distinctif de la paire.
+      const t = theme.trim();
+      if (t.length < 4 || t.length > 40) issues.push(`${label} : thème de ${t.length} caractères (4 à 40)`);
+      if (foldForCompare(t) === foldForCompare(pack.name)) issues.push(`${label} : thème identique au nom du pack`);
+      if (mentions(t, a.word) || mentions(t, b.word)) issues.push(`${label} : le thème « ${t} » révèle un mot`);
     }
   }
   return issues;

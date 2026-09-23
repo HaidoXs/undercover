@@ -11,7 +11,7 @@ describe('packs de mots', () => {
   it('propose au moins les 10 packs demandés avec leurs exemples', () => {
     const has = (packId: string, a: string, b: string) => {
       const pack = PACKS.find((p) => p.id === packId)!;
-      return pack.pairs.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+      return pack.pairs.some(({ a: x, b: y }) => (x.word === a && y.word === b) || (x.word === b && y.word === a));
     };
     expect(has('anime-manga', 'Naruto', 'Sasuke')).toBe(true);
     expect(has('anime-manga', 'One Piece', 'Fairy Tail')).toBe(true);
@@ -37,15 +37,30 @@ describe('packs de mots', () => {
   it('limite la réutilisation d’un même mot entre paires', () => {
     const counts = new Map<string, number>();
     for (const pack of PACKS) {
-      for (const pair of pack.pairs) for (const w of pair) counts.set(foldForCompare(w), (counts.get(foldForCompare(w)) ?? 0) + 1);
+      for (const { a, b } of pack.pairs) for (const w of [a.word, b.word]) counts.set(foldForCompare(w), (counts.get(foldForCompare(w)) ?? 0) + 1);
     }
     const reused = [...counts].filter(([, n]) => n > 1);
     expect(reused).toEqual([]);
   });
 
+  it('fournit une description par mot et un thème par paire, sans trahir l’autre mot', () => {
+    for (const pack of PACKS) {
+      for (const { theme, a, b } of pack.pairs) {
+        expect(a.description.length).toBeGreaterThan(14);
+        expect(b.description.length).toBeGreaterThan(14);
+        expect(foldForCompare(a.description)).not.toContain(foldForCompare(b.word));
+        expect(foldForCompare(b.description)).not.toContain(foldForCompare(a.word));
+        expect(foldForCompare(theme)).not.toContain(foldForCompare(a.word));
+        expect(foldForCompare(theme)).not.toContain(foldForCompare(b.word));
+      }
+    }
+  });
+
   it('n’expose que des métadonnées publiques', () => {
     const json = JSON.stringify(PACK_META);
     expect(json).not.toContain('Sasuke');
+    expect(json).not.toContain(PACKS[0].pairs[0].theme);
+    expect(json).not.toContain(PACKS[0].pairs[0].a.description);
     expect(PACK_META.every((m) => m.pairCount === PACKS.find((p) => p.id === m.id)!.pairs.length)).toBe(true);
   });
 });

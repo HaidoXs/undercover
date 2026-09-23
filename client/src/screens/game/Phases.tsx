@@ -17,7 +17,7 @@ import {
   VenetianMask,
   Vote,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { CLUE_MAX, GUESS_MAX } from '../../../../shared/constants';
 import type { GameView, PublicPlayer, Role, RoundView } from '../../../../shared/types';
 import { Avatar } from '../../components/Avatar';
@@ -25,6 +25,7 @@ import { FormError, RoleChip, Spinner } from '../../components/Chrome';
 import { SecretCard, SecretPeek, useConcealOnLeave } from '../../components/Secret';
 import { ProgressBar } from '../../components/Timer';
 import { useCountdown } from '../../hooks/time';
+import { stopTicking, useTickTock } from '../../lib/sound';
 import { cls, playersById, ROLE_LABEL, submitOnEnter } from '../../lib/util';
 import { game, leaveRoom } from '../../net/controller';
 import { toast } from '../../state/store';
@@ -150,54 +151,127 @@ export function CluesPhase({ view }: { view: GameView }) {
         )}
       </div>
 
-      {myTurn && round.turn && <ClueForm turnId={round.turn.turnId} />}
+      {myTurn && round.turn && <ClueForm view={view} turnId={round.turn.turnId} />}
       {view.me.secret && canPlay(view) && <SecretPeek secret={view.me.secret} />}
 
       <section className="card card-tight" aria-labelledby="order-title">
-        <div className="card-header" style={{ marginBottom: 8 }}>
+        <div className="card-header" style={{ marginBottom: 10 }}>
           <h2 id="order-title" className="card-title">
-            <Users size={18} /> Ordre de passage · Tour {round.cycle}
+            <Users size={18} /> Indices · Tour {round.cycle}
           </h2>
+          <span className="pill">
+            {doneThisCycle.size}/{round.order.length}
+          </span>
         </div>
-        <ol className="turn-order">
-          {round.order.map((id, i) => {
-            const p = pmap.get(id);
-            const done = doneThisCycle.get(id);
-            const isCurrent = id === currentId;
-            return (
-              <li key={id} className={cls(isCurrent && 'is-current', done && 'is-done')} aria-current={isCurrent ? 'step' : undefined}>
-                <span className="turn-num">{i + 1}</span>
-                <Avatar avatar={p?.avatar ?? 0} size={32} label="" dimmed={!p?.connected} badge={!p?.connected ? 'offline' : null} />
-                <span className="grow player-name">
-                  {p?.name}
-                  {id === view.me.id && <span className="subtle"> (toi)</span>}
-                </span>
-                {done ? (
-                  done.text === null ? (
-                    <span className="pill">Passé</span>
-                  ) : (
-                    <span className="quote" style={{ maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      « {done.text} »
-                    </span>
-                  )
-                ) : isCurrent ? (
-                  <span className="pill pill-mint">En cours</span>
-                ) : null}
-              </li>
-            );
-          })}
-        </ol>
+        <ClueTrack view={view} currentId={currentId} done={doneThisCycle} />
       </section>
     </>
   );
 }
 
-function ClueForm({ turnId }: { turnId: string }) {
+function isInView(container: HTMLElement, el: HTMLElement): boolean {
+  // La piste est positionnée : offsetLeft est mesuré depuis son bord gauche.
+  return el.offsetLeft >= container.scrollLeft - 8 && el.offsetLeft + el.offsetWidth <= container.scrollLeft + container.clientWidth + 8;
+}
+
+/**
+ * Cartes d'indices horizontales, dans l'ordre de passage.
+ * La vue suit le joueur en cours, sauf si l'utilisateur est parti relire des indices précédents.
+ */
+function ClueTrack({
+  view,
+  currentId,
+  done,
+}: {
+  view: GameView;
+  currentId: string | undefined;
+  done: Map<string, { text: string | null }>;
+}) {
+  const round = roundOf(view);
+  const pmap = playersById(view);
+  const trackRef = useRef<HTMLOListElement>(null);
+  const followed = useRef<string | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (!track || !currentId) return;
+    const card = track.querySelector<HTMLElement>(`[data-player="${CSS.escape(currentId)}"]`);
+    if (!card) return;
+    const previous = followed.current ? track.querySelector<HTMLElement>(`[data-player="${CSS.escape(followed.current)}"]`) : null;
+    const first = followed.current === undefined;
+    followed.current = currentId;
+    // L'utilisateur relit d'anciens indices (la carte précédente n'est plus visible) : on ne bouge pas.
+    if (!first && previous && !isInView(track, previous)) return;
+    const target = card.offsetLeft - (track.clientWidth - card.offsetWidth) / 2;
+    const smooth = !first && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    track.scrollTo({ left: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
+  }, [currentId]);
+
+  return (
+    <ol ref={trackRef} className="clue-track" aria-label={`Indices du tour ${round.cycle}, dans l’ordre de passage`}>
+      {round.order.map((id, i) => {
+        const p = pmap.get(id);
+        const clue = done.get(id);
+        const isCurrent = id === currentId;
+        const state = clue ? (clue.text === null ? 'passé' : `indice : ${clue.text}`) : isCurrent ? 'réfléchit' : 'à venir';
+        return (
+          <li
+            key={id}
+            data-player={id}
+            className={cls('clue-card', isCurrent && 'is-current', !clue && !isCurrent && 'is-upcoming')}
+            aria-current={isCurrent ? 'step' : undefined}
+            aria-label={`${i + 1}. ${p?.name ?? 'Joueur'}${id === view.me.id ? ' (toi)' : ''}, ${state}`}
+          >
+            <span className="cc-num" aria-hidden="true">
+              {i + 1}
+            </span>
+            <Avatar
+              avatar={p?.avatar ?? 0}
+              size={40}
+              label=""
+              ring={isCurrent ? 'mint' : undefined}
+              dimmed={!p?.connected}
+              badge={!p?.connected ? 'offline' : null}
+            />
+            <span className="cc-name" aria-hidden="true">
+              {p?.name}
+              {id === view.me.id && ' (toi)'}
+            </span>
+            <span className="cc-body" aria-hidden="true">
+              {clue ? (
+                clue.text === null ? (
+                  <span key="passed" className="cc-passed">
+                    Passé
+                  </span>
+                ) : (
+                  <span key="text" className="cc-text">
+                    « {clue.text} »
+                  </span>
+                )
+              ) : isCurrent ? (
+                <span className="typing">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              ) : (
+                <span className="cc-wait">À venir</span>
+              )}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ClueForm({ view, turnId }: { view: GameView; turnId: string }) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const id = useId();
+  useTickTock(!busy, view.deadline, view.paused);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -212,6 +286,7 @@ function ClueForm({ turnId }: { turnId: string }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!length || busy) return;
+    stopTicking(); // silence immédiat dès la validation
     setBusy(true);
     setError(null);
     const res = await game.clue(turnId, text);
@@ -499,6 +574,8 @@ export function MrWhitePhase({ view }: { view: GameView }) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Tic-tac pour Mr. White pendant sa tentative ; silence dès sa réponse ou la fin du délai.
+  useTickTock(attempt?.playerId === view.me.id && !attempt.resolved && !busy, view.deadline, view.paused);
   if (!attempt) return null;
   const mw = pmap.get(attempt.playerId);
   const isMe = attempt.playerId === view.me.id;
@@ -506,6 +583,7 @@ export function MrWhitePhase({ view }: { view: GameView }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!text.trim() || busy) return;
+    stopTicking();
     setBusy(true);
     setError(null);
     const res = await game.guess(attempt.attemptId, text);

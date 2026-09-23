@@ -1,9 +1,10 @@
-import { LogOut } from 'lucide-react';
+import { LogOut, Volume2, VolumeX } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { GameView } from '../../../shared/types';
 import { Brand, Spinner } from '../components/Chrome';
 import { HelpButton } from '../components/Help';
 import { Sheet } from '../components/Sheet';
+import { setMuted, useMuted } from '../lib/sound';
 import { leaveRoom } from '../net/controller';
 import { toast } from '../state/store';
 import { GameScreen } from './game/Game';
@@ -26,10 +27,28 @@ export function TopBar({ view, onLeft, children }: { view: GameView; onLeft: () 
             </span>
           </>
         )}
+        <SoundToggle />
         <HelpButton />
         <LeaveButton view={view} onLeft={onLeft} />
       </div>
     </header>
+  );
+}
+
+/** Coupe ou réactive les sons ; le choix est mémorisé sur cet appareil. */
+function SoundToggle() {
+  const muted = useMuted();
+  return (
+    <button
+      type="button"
+      className="icon-btn"
+      aria-pressed={muted}
+      aria-label={muted ? 'Réactiver les sons' : 'Couper les sons'}
+      title={muted ? 'Réactiver les sons' : 'Couper les sons'}
+      onClick={() => setMuted(!muted)}
+    >
+      {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+    </button>
   );
 }
 

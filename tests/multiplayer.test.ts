@@ -288,7 +288,14 @@ describe('manche complète et confidentialité', () => {
     // Cartes : chacun ne reçoit que la sienne.
     for (const p of players) {
       const role = roleOf(p);
-      expect(p.view.me.secret).toEqual(role === 'mrwhite' ? { kind: 'mrwhite' } : { kind: 'word', word: role === 'civil' ? civil : undercover });
+      const pair = room.round!.pair;
+      expect(p.view.me.secret).toEqual(
+        role === 'mrwhite'
+          ? { kind: 'mrwhite', theme: pair.theme }
+          : role === 'civil'
+            ? { kind: 'word', word: civil, description: pair.civilDescription }
+            : { kind: 'word', word: undercover, description: pair.undercoverDescription },
+      );
     }
 
     await playClues(players);
@@ -306,6 +313,11 @@ describe('manche complète et confidentialité', () => {
       const role = roleOf(p);
       if (role !== 'civil') expect(all).not.toContain(q(civil));
       if (role !== 'undercover') expect(all).not.toContain(q(undercover));
+      // Descriptions privées et thème de Mr. White : jamais transmis à un autre joueur.
+      const { civilDescription, undercoverDescription, theme } = room.round!.pair;
+      if (role !== 'civil') expect(all).not.toContain(q(civilDescription));
+      if (role !== 'undercover') expect(all).not.toContain(q(undercoverDescription));
+      if (role !== 'mrwhite') expect(all).not.toContain(q(theme));
       expect(all).not.toContain('"role":');
       expect(all).not.toContain('targetId');
       expect(all).not.toContain('packName');

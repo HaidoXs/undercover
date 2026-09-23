@@ -38,7 +38,7 @@ npm run dev
 ### Tests
 
 ```bash
-npm test          # 53 tests : moteur, packs de mots, parcours multijoueurs réels
+npm test          # 59 tests : moteur, packs, sons, parcours multijoueurs réels
 npm run typecheck # vérification TypeScript de tout le projet
 ```
 
@@ -102,7 +102,7 @@ Un nom de domaine est facultatif (sous-domaine fourni par l'hébergeur).
 1. Créer `server/packs/mon-pack.ts` sur le modèle des autres :
 
    ```ts
-   import { definePack } from './types';
+   import { definePack, pair } from './types';
 
    export default definePack({
      id: 'mon-pack',            // identifiant stable, ne plus le changer
@@ -110,7 +110,8 @@ Un nom de domaine est facultatif (sous-domaine fourni par l'hébergeur).
      description: 'Une phrase courte pour la carte du salon.',
      icon: 'sparkles',          // icône Lucide (kebab-case)
      pairs: [
-       ['Mot A', 'Mot B'],       // deux éléments proches, de notoriété comparable
+       // thème commun (vu seulement par Mr. White), puis chaque mot avec sa description privée
+       pair('Gastronomie japonaise', ['Sushi', 'Spécialité de riz vinaigré, souvent avec du poisson cru.'], ['Maki', 'Rouleau de riz enveloppé d’une feuille d’algue.']),
        // … au moins 30 paires, ajoutées en fin de liste
      ],
    });
@@ -119,8 +120,13 @@ Un nom de domaine est facultatif (sous-domaine fourni par l'hébergeur).
 2. L'ajouter à la liste `PACKS` de `server/packs/index.ts`.
 3. Si l'icône est nouvelle, l'ajouter à `PACK_ICONS` dans `client/src/components/icons.ts`
    (sinon une icône par défaut s'affiche).
-4. `npm test` vérifie : ≥ 30 paires, aucune paire identique, aucun doublon (même inversé) entre packs,
-   aucun mot réutilisé dans deux paires. Le serveur refuse aussi de démarrer si une règle est violée.
+4. Vérifier : `npx tsx scripts/check-pack.ts mon-pack`, puis `npm test`. Les contrôles portent sur :
+   - au moins 30 paires, aucune paire identique ni en double (même inversée), aucun mot réutilisé ;
+   - une description de 15 à 110 caractères par mot, qui ne cite pas l'autre mot de la paire ni un rôle ;
+   - un thème de 4 à 40 caractères, différent du nom du pack, sans mot ni terme distinctif de la paire.
+
+   Le serveur refuse de démarrer si une règle est violée. Garder les thèmes assez larges
+   (« Gastronomie japonaise », pas « Rouleaux de riz ») pour ne pas trop aider Mr. White.
 
 ---
 
@@ -130,8 +136,11 @@ Un nom de domaine est facultatif (sous-domaine fourni par l'hébergeur).
   Les Civils doivent être strictement majoritaires au départ.
 - La paire est tirée uniquement parmi les packs sélectionnés, sans répétition dans le salon tant que la
   réserve n'est pas épuisée ; le mot des Civils est tiré au sort dans la paire.
-- Civils et Undercover ne voient que leur mot (pas leur rôle) ; Mr. White sait qu'il n'a pas de mot.
+- Civils et Undercover ne voient que leur mot (pas leur rôle), accompagné d'une courte description privée ;
+  Mr. White sait qu'il n'a pas de mot et reçoit seulement un thème général commun à la paire.
 - Ordre de passage fixé par le serveur ; Mr. White ne commence jamais le premier tour.
+- Tic-tac discret pendant les 10 dernières secondes d'un indice ou de la tentative de Mr. White
+  (plus rapide sur les 5 dernières), pour le seul joueur qui doit agir ; bouton pour couper les sons, choix mémorisé.
 - Indice interdit s'il donne le mot (égalité après normalisation, ou mot contenu dans l'indice).
   Temps écoulé ou joueur absent : « Passé ».
 - Vote secret et définitif, pas contre soi-même ; on voit qui a voté, jamais contre qui avant la clôture.

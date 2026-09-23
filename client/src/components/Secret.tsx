@@ -65,8 +65,10 @@ export function SecretCard({
                 <VenetianMask className="secret-corner br" size={22} aria-hidden="true" />
                 <p className="eyebrow">Ton mot secret</p>
                 <p className="secret-word">{secret.word}</p>
-                <p className="muted" style={{ fontSize: '0.9rem', maxWidth: '26ch' }}>
-                  Civil ou Undercover ? Écoute les autres pour le deviner… sans te trahir.
+                <hr className="secret-rule" />
+                <p className="secret-desc">{secret.description}</p>
+                <p className="subtle" style={{ fontSize: '0.82rem', maxWidth: '28ch' }}>
+                  Civil ou Undercover ? Écoute les autres pour le deviner.
                 </p>
               </>
             ) : (
@@ -81,6 +83,10 @@ export function SecretCard({
                 <p className="muted" style={{ fontSize: '0.9rem', maxWidth: '28ch' }}>
                   Tu n’as pas de mot. Écoute les indices, fonds-toi dans la masse et devine le mot des Civils.
                 </p>
+                <div className="secret-theme">
+                  <span className="lbl">Petit indice : le thème</span>
+                  <span className="val">{secret.theme}</span>
+                </div>
               </>
             ))}
         </div>
@@ -109,7 +115,17 @@ export function SecretPeek({ secret }: { secret: Secret }) {
       <div className="grow" aria-live="polite">
         <p className="subtle">{secret.kind === 'word' ? 'Ta carte' : 'Ton rôle'}</p>
         {shown ? (
-          <p className="peek-word">{secret.kind === 'word' ? secret.word : 'Mr. White · aucun mot'}</p>
+          secret.kind === 'word' ? (
+            <>
+              <p className="peek-word">{secret.word}</p>
+              <p className="peek-desc">{secret.description}</p>
+            </>
+          ) : (
+            <>
+              <p className="peek-word">Mr. White · aucun mot</p>
+              <p className="peek-desc">Thème : {secret.theme}</p>
+            </>
+          )
         ) : (
           <span className="peek-hidden" aria-label="Carte masquée">
             <i />
