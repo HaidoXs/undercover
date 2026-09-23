@@ -4566,3 +4566,82 @@ dialog.sheet::backdrop {
   color: var(--ink-3);
   font-weight: 700;
 }
+
+/* ───────────── accueil : connexion facultative ───────────── */
+
+.home-account {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 2px dashed var(--line-strong);
+  background: var(--paper);
+  text-align: center;
+}
+
+.home-account.is-in {
+  border-style: solid;
+  border-color: var(--edge);
+  background: var(--mint-soft);
+  text-align: left;
+}
+
+.home-account-title {
+  font-family: var(--font-display);
+  font-weight: 620;
+  font-size: 1.12rem;
+}
+
+.home-account-sub {
+  margin-top: 2px;
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.home-account-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.home-account-actions .google-btn {
+  width: min(100%, 340px);
+  min-height: 52px;
+  font-size: 1.05rem;
+}
+
+.home-account-in {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.home-account-in p strong {
+  display: block;
+}
+
+.home-account-in p span {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.home-account-badge {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid var(--edge);
+  background: var(--mint);
+  color: var(--on-accent);
+}
+
+.home-account-in .btn {
+  margin-left: auto;
+}

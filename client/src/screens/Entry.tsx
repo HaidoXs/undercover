@@ -31,7 +31,7 @@ import { checkRoom, createRoom, fatalTitle, joinRoom, resumeSaved, resumeWithAcc
 import { discardGuestPhoto } from '../net/photos';
 import { session, type ProfilePhoto } from '../net/session';
 import { PhotoPicker } from '../components/PhotoPicker';
-import { AccountButton, ThemeToggle } from '../components/Account';
+import { AccountButton, HomeAccountCard, ThemeToggle } from '../components/Account';
 import { useApp, type Fatal } from '../state/store';
 
 // ───────────────────────── accueil
@@ -81,6 +81,10 @@ export function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () =>
               <small>Avec un code ou un lien</small>
             </span>
           </button>
+        </div>
+
+        <div className="enter-3">
+          <HomeAccountCard />
         </div>
 
         <ol className="home-steps enter-3" aria-label="Déroulement d’une manche">

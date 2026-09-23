@@ -50,6 +50,57 @@ export function AccountButton() {
   );
 }
 
+/**
+ * Encart de l'accueil : la connexion (facultative) bien visible, sous les boutons de jeu.
+ * Connecté : rappel que le profil et les réglages sont sauvegardés.
+ */
+export function HomeAccountCard() {
+  const account = useAccount();
+  const [open, setOpen] = useState(false);
+  const config = account.config;
+  if (!config?.accounts || account.status === 'loading') return null;
+  const signedIn = account.status === 'signed-in';
+  if (!signedIn && !config.google && !config.email) return null;
+  const name = account.view?.profile?.name;
+
+  return (
+    <section className={cls('home-account', signedIn && 'is-in')} aria-labelledby="home-account-title">
+      {signedIn ? (
+        <div className="home-account-in">
+          <span className="home-account-badge" aria-hidden="true">
+            <ShieldCheck size={20} />
+          </span>
+          <p className="grow" id="home-account-title">
+            <strong>Connecté{name ? ` : ${name}` : ''}</strong>
+            <span>Ton pseudo, ton avatar et tes réglages sont sauvegardés.</span>
+          </p>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(true)}>
+            Mon compte
+          </button>
+        </div>
+      ) : (
+        <>
+          <p className="home-account-title" id="home-account-title">
+            Garde ton profil d’un appareil à l’autre
+          </p>
+          <p className="home-account-sub">Facultatif : pseudo, avatar, photo et réglages sauvegardés. Tu peux jouer sans compte.</p>
+          <div className="home-account-actions">
+            {config.google && <GoogleButton />}
+            {config.email && (
+              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setOpen(true)}>
+                <Mail size={17} /> {config.google ? 'Ou par e-mail' : 'Se connecter par e-mail'}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+      <Sheet open={open} onClose={() => setOpen(false)} title={signedIn ? 'Mon compte' : 'Compte (facultatif)'} icon={<CircleUserRound size={20} />}>
+        <AccountPanel onDone={() => setOpen(false)} />
+      </Sheet>
+    </section>
+  );
+}
+
 type Mode = 'signin' | 'signup' | 'forgot' | 'check-mail' | 'reset-sent';
 
 /** Adresse de retour : on revient là où l'on était (le salon en cours reste le même). */
