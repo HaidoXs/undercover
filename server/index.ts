@@ -45,6 +45,10 @@ const server = await startServer({
         from: env('MAIL_FROM') ?? 'Undercover <no-reply@localhost>',
       }
     : null,
+}).catch((error: unknown) => {
+  // Message lisible dans les journaux de l'hébergeur (Render → Logs), puis arrêt.
+  console.error(`[undercover] Démarrage impossible : ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
 });
 
 const shutdown = () => {

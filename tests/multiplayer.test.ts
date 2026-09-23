@@ -326,9 +326,13 @@ describe('manche complète et confidentialité', () => {
       expect(all).not.toContain('packName');
     }
     // Les métadonnées de packs ne contiennent aucun mot.
+    // Seule exception : un mot identique au nom public d'un univers précis (« Harry Potter »), affiché quel que soit le tirage.
     const packs = await (await fetch(`${server.url}/api/packs`)).text();
-    expect(packs).not.toContain(civil);
-    expect(packs).not.toContain(undercover);
+    const universeNames = new Set((JSON.parse(packs).packs as { universes: { name: string }[] }[]).flatMap((p) => p.universes.map((u) => u.name)));
+    for (const word of [civil, undercover]) if (!universeNames.has(word)) expect(packs).not.toContain(q(word));
+    const { civilDescription, undercoverDescription } = room.round!.pair;
+    expect(packs).not.toContain(civilDescription);
+    expect(packs).not.toContain(undercoverDescription);
   });
 
   it('joue une manche jusqu’à la victoire des Civils, révèle rôles et mots, puis rejoue', async () => {
