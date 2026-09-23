@@ -1,0 +1,721 @@
+import {
+  Check,
+  CircleCheck,
+  CircleX,
+  Crosshair,
+  EyeOff,
+  Ghost,
+  Hourglass,
+  Lock,
+  LogOut,
+  RefreshCw,
+  Scale,
+  Send,
+  Sparkles,
+  Trophy,
+  Users,
+  VenetianMask,
+  Vote,
+} from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { CLUE_MAX, GUESS_MAX } from '../../../../shared/constants';
+import type { GameView, PublicPlayer, Role, RoundView } from '../../../../shared/types';
+import { Avatar } from '../../components/Avatar';
+import { FormError, RoleChip, Spinner } from '../../components/Chrome';
+import { SecretCard, SecretPeek, useConcealOnLeave } from '../../components/Secret';
+import { ProgressBar } from '../../components/Timer';
+import { useCountdown } from '../../hooks/time';
+import { cls, playersById, ROLE_LABEL, submitOnEnter } from '../../lib/util';
+import { game, leaveRoom } from '../../net/controller';
+import { toast } from '../../state/store';
+
+const roundOf = (view: GameView) => view.round as RoundView;
+const canPlay = (view: GameView) => view.me.status === 'alive';
+
+function Seconds({ view, prefix }: { view: GameView; prefix: string }) {
+  const cd = useCountdown(view);
+  if (!cd) return null;
+  return (
+    <span>
+      {prefix} {cd.paused ? '(en pause)' : `${cd.seconds} s`}
+    </span>
+  );
+}
+
+// ───────────────────────── 4. découverte privée du mot
+
+export function RevealPhase({ view }: { view: GameView }) {
+  const round = roundOf(view);
+  const secret = view.me.secret;
+  const [revealed, setRevealed] = useState(false);
+  const [everRevealed, setEverRevealed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const hide = useCallback(() => setRevealed(false), []);
+  useConcealOnLeave(hide);
+
+  const participants = view.players.filter((p) => p.status === 'alive');
+  const seenCount = round.seen.length;
+
+  if (!secret) {
+    return (
+      <section className="card center stack">
+        <p className="eyebrow">Manche {round.number}</p>
+        <h2 className="display h2">Les joueurs découvrent leur carte</h2>
+        <p className="muted">
+          {seenCount}/{participants.length} ont mémorisé leur mot.
+        </p>
+      </section>
+    );
+  }
+
+  const confirm = async () => {
+    setBusy(true);
+    setRevealed(false);
+    const res = await game.seen(round.id);
+    setBusy(false);
+    if (!res.ok) toast(res.error.message, 'warn');
+  };
+
+  return (
+    <section className="card card-glow stack center" aria-labelledby="reveal-title">
+      <div className="stack-sm">
+        <p className="eyebrow">Carte secrète · Manche {round.number}</p>
+        <h2 id="reveal-title" className="display h2">
+          Découvre ton mot
+        </h2>
+        <p className="muted">Vérifie que personne ne regarde ton écran, puis retourne la carte.</p>
+      </div>
+
+      <SecretCard
+        secret={secret}
+        revealed={revealed}
+        onReveal={() => {
+          setRevealed(true);
+          setEverRevealed(true);
+        }}
+      />
+
+      <div className="stack-sm">
+        {revealed && (
+          <button type="button" className="btn btn-ghost btn-block" onClick={hide}>
+            <EyeOff size={18} /> Masquer ma carte
+          </button>
+        )}
+        {view.me.hasSeen ? (
+          <div className="notice notice-mint" role="status">
+            <CircleCheck size={18} />
+            <span>
+              C’est noté ! En attente des autres joueurs ({seenCount}/{participants.length}).
+            </span>
+          </div>
+        ) : (
+          <>
+            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!everRevealed || busy} onClick={confirm}>
+              {busy ? <Spinner /> : <Check size={20} strokeWidth={3} />} J’ai mémorisé
+            </button>
+            {!everRevealed && <p className="subtle">Retourne d’abord ta carte pour continuer.</p>}
+          </>
+        )}
+        <p className="subtle">
+          <Seconds view={view} prefix="Début des indices dans" />
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ───────────────────────── 5. tour d'indices
+
+export function CluesPhase({ view }: { view: GameView }) {
+  const round = roundOf(view);
+  const pmap = playersById(view);
+  const currentId = round.turn?.playerId;
+  const current = currentId ? pmap.get(currentId) : undefined;
+  const myTurn = currentId === view.me.id && canPlay(view);
+  const doneThisCycle = new Map(round.clues.filter((c) => c.cycle === round.cycle).map((c) => [c.playerId, c]));
+
+  return (
+    <>
+      <div className={cls('expect-line', myTurn && 'is-me')} role="status" aria-live="polite">
+        {current && <Avatar avatar={current.avatar} size={36} ring={myTurn ? 'mint' : undefined} label="" />}
+        <span className="grow">
+          {myTurn ? 'À toi de jouer : donne ton indice !' : current ? `Au tour de ${current.name}` : 'Tour suivant…'}
+        </span>
+        {!myTurn && (
+          <span className="typing" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
+      </div>
+
+      {myTurn && round.turn && <ClueForm turnId={round.turn.turnId} />}
+      {view.me.secret && canPlay(view) && <SecretPeek secret={view.me.secret} />}
+
+      <section className="card card-tight" aria-labelledby="order-title">
+        <div className="card-header" style={{ marginBottom: 8 }}>
+          <h2 id="order-title" className="card-title">
+            <Users size={18} /> Ordre de passage · Tour {round.cycle}
+          </h2>
+        </div>
+        <ol className="turn-order">
+          {round.order.map((id, i) => {
+            const p = pmap.get(id);
+            const done = doneThisCycle.get(id);
+            const isCurrent = id === currentId;
+            return (
+              <li key={id} className={cls(isCurrent && 'is-current', done && 'is-done')} aria-current={isCurrent ? 'step' : undefined}>
+                <span className="turn-num">{i + 1}</span>
+                <Avatar avatar={p?.avatar ?? 0} size={32} label="" dimmed={!p?.connected} badge={!p?.connected ? 'offline' : null} />
+                <span className="grow player-name">
+                  {p?.name}
+                  {id === view.me.id && <span className="subtle"> (toi)</span>}
+                </span>
+                {done ? (
+                  done.text === null ? (
+                    <span className="pill">Passé</span>
+                  ) : (
+                    <span className="quote" style={{ maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      « {done.text} »
+                    </span>
+                  )
+                ) : isCurrent ? (
+                  <span className="pill pill-mint">En cours</span>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+    </>
+  );
+}
+
+function ClueForm({ turnId }: { turnId: string }) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const id = useId();
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    try {
+      navigator.vibrate?.(60);
+    } catch {
+      /* vibration non disponible */
+    }
+  }, [turnId]);
+
+  const length = [...text.trim()].length;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!length || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await game.clue(turnId, text);
+    setBusy(false);
+    if (!res.ok) setError(res.error.message);
+  };
+
+  return (
+    <form className="card my-turn stack-sm" onSubmit={submit} noValidate aria-labelledby={`${id}-t`}>
+      <h2 id={`${id}-t`} className="h3">
+        Ton indice
+      </h2>
+      <p className="subtle">Un mot ou une courte expression. Interdit de donner ton mot exact.</p>
+      <div className="input-wrap">
+        <input
+          ref={inputRef}
+          className="input"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
+          maxLength={CLUE_MAX}
+          placeholder="Ex. « croustillant »"
+          autoComplete="off"
+          enterKeyHint="send"
+          onKeyDown={submitOnEnter}
+          aria-label="Ton indice"
+          aria-invalid={error ? true : undefined}
+        />
+        <span className={cls('input-count', length >= CLUE_MAX && 'is-full')} aria-hidden="true">
+          {length}/{CLUE_MAX}
+        </span>
+      </div>
+      <FormError message={error} />
+      <button type="submit" className="btn btn-mint btn-lg btn-block" disabled={!length || busy}>
+        {busy ? <Spinner /> : <Send size={19} />} Envoyer l’indice
+      </button>
+    </form>
+  );
+}
+
+// ───────────────────────── 6. vote
+
+export function VotePhase({ view }: { view: GameView }) {
+  const round = roundOf(view);
+  const ballot = round.ballot;
+  const pmap = playersById(view);
+  const [target, setTarget] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!ballot) return null;
+
+  const iAmVoter = ballot.voters.includes(view.me.id);
+  const cycleClues = (id: string) =>
+    round.clues
+      .filter((c) => c.cycle === round.cycle && c.playerId === id)
+      .map((c) => (c.text === null ? 'Passé' : `« ${c.text} »`))
+      .join(' · ');
+  const tiedNames = ballot.candidates.map((id) => pmap.get(id)?.name ?? '?');
+
+  const submit = async () => {
+    if (!target) return;
+    setBusy(true);
+    const res = await game.vote(ballot.id, target);
+    setBusy(false);
+    if (!res.ok) toast(res.error.message, 'warn');
+  };
+
+  return (
+    <>
+      <section className="card card-glow stack" aria-labelledby="vote-title">
+        <div className="stack-sm">
+          <p className="eyebrow">{ballot.runoff ? 'Égalité à départager' : `Tour ${round.cycle}`}</p>
+          <h2 id="vote-title" className="display h2">
+            {ballot.runoff ? 'Second scrutin' : 'Qui est l’intrus ?'}
+          </h2>
+          <p className="muted">
+            {ballot.runoff
+              ? `Seuls ${tiedNames.join(' et ')} peuvent être désignés. Tous les joueurs en jeu votent.`
+              : 'Vote secret et définitif. Les choix seront révélés à la clôture.'}
+          </p>
+        </div>
+
+        {!iAmVoter ? (
+          <div className="notice notice-muted">
+            <Lock size={18} />
+            <span>Tu observes ce scrutin : seuls les joueurs encore en jeu votent.</span>
+          </div>
+        ) : ballot.myVote ? (
+          <div className="locked-vote" role="status">
+            <Avatar avatar={pmap.get(ballot.myVote)?.avatar ?? 0} size={48} label="" />
+            <div className="grow">
+              <strong>Vote enregistré contre {pmap.get(ballot.myVote)?.name}</strong>
+              <p className="subtle">Ton choix est définitif et reste secret jusqu’à la clôture.</p>
+            </div>
+            <Lock size={20} className="accent-mint" />
+          </div>
+        ) : (
+          <>
+            <div className="vote-grid" role="group" aria-label="Choisis le joueur à éliminer">
+              {ballot.candidates.map((id) => {
+                const p = pmap.get(id);
+                const self = id === view.me.id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className="vote-card"
+                    aria-pressed={target === id}
+                    disabled={self || busy}
+                    onClick={() => setTarget(id)}
+                    aria-label={self ? `${p?.name} (toi, impossible)` : `Voter contre ${p?.name}`}
+                  >
+                    {target === id && <Crosshair size={18} className="target-mark" aria-hidden="true" />}
+                    <Avatar avatar={p?.avatar ?? 0} size={56} label="" dimmed={self} />
+                    <span className="vc-name">
+                      {p?.name}
+                      {self && ' (toi)'}
+                    </span>
+                    {!self && cycleClues(id) && <span className="vc-clues">{cycleClues(id)}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!target || busy} onClick={submit}>
+              {busy ? <Spinner /> : <Vote size={20} />}
+              {target ? `Voter contre ${pmap.get(target)?.name}` : 'Choisis un joueur'}
+            </button>
+          </>
+        )}
+      </section>
+
+      <section className="card card-tight" aria-labelledby="voters-title">
+        <div className="card-header" style={{ marginBottom: 10 }}>
+          <h2 id="voters-title" className="card-title">
+            <Vote size={18} /> Votes reçus
+          </h2>
+          <span className="pill pill-violet" aria-live="polite">
+            {ballot.voted.length}/{ballot.voters.length}
+          </span>
+        </div>
+        <div className="voters">
+          {ballot.voters.map((id) => {
+            const p = pmap.get(id);
+            const has = ballot.voted.includes(id);
+            return (
+              <span key={id} className="voter" title={`${p?.name} ${has ? 'a voté' : 'n’a pas encore voté'}`}>
+                <Avatar
+                  avatar={p?.avatar ?? 0}
+                  size={40}
+                  dimmed={!has}
+                  badge={has ? 'check' : !p?.connected ? 'offline' : null}
+                  label={`${p?.name}, ${has ? 'a voté' : 'n’a pas encore voté'}`}
+                />
+              </span>
+            );
+          })}
+        </div>
+        <p className="subtle" style={{ marginTop: 10 }}>
+          Sans vote à la fin du temps, c’est une abstention.
+        </p>
+      </section>
+    </>
+  );
+}
+
+// ───────────────────────── 7. résultat de l'élimination
+
+const ROLE_VERDICT: Record<Role, string> = {
+  civil: 'Aïe… un Civil innocent quitte la partie.',
+  undercover: 'Bien vu : un intrus est démasqué !',
+  mrwhite: 'Mr. White est démasqué… mais il a une dernière chance.',
+};
+
+export function ResultPhase({ view }: { view: GameView }) {
+  const round = roundOf(view);
+  const result = round.result;
+  const pmap = playersById(view);
+  if (!result) return null;
+  const outcome = result.outcome;
+  const max = Math.max(1, ...result.tally.map((t) => t.votes));
+
+  return (
+    <>
+      <section className="card card-glow" aria-live="polite">
+        {outcome.type === 'eliminated' && (
+          <div className="verdict">
+            <p className="eyebrow">{result.runoff ? 'Second scrutin' : 'Le groupe a tranché'}</p>
+            <div className="verdict-avatar">
+              <Avatar avatar={pmap.get(outcome.playerId)?.avatar ?? 0} size={104} badge="out" label="" />
+            </div>
+            <p className="verdict-name">{pmap.get(outcome.playerId)?.name}</p>
+            <div className="verdict-role stack-sm" style={{ alignItems: 'center' }}>
+              <span className="muted">était</span>
+              <RoleChip role={outcome.role} large />
+            </div>
+            <p className="muted">{ROLE_VERDICT[outcome.role]}</p>
+          </div>
+        )}
+        {(outcome.type === 'tie' || outcome.type === 'tie-persist') && (
+          <div className="verdict">
+            <span className="state-icon" aria-hidden="true">
+              <Scale size={32} />
+            </span>
+            <h2 className="display h2">{outcome.type === 'tie' ? 'Égalité !' : 'Égalité persistante'}</h2>
+            <div className="tie-avatars">
+              {outcome.tied.map((id) => (
+                <div key={id} className="stack-sm" style={{ alignItems: 'center' }}>
+                  <Avatar avatar={pmap.get(id)?.avatar ?? 0} size={64} label="" />
+                  <strong>{pmap.get(id)?.name}</strong>
+                </div>
+              ))}
+            </div>
+            <p className="muted">
+              {outcome.type === 'tie'
+                ? 'Second scrutin dans un instant : seuls les ex æquo peuvent être désignés.'
+                : 'Personne n’est éliminé. Nouveau tour d’indices !'}
+            </p>
+          </div>
+        )}
+        {outcome.type === 'no-votes' && (
+          <div className="verdict">
+            <span className="state-icon" aria-hidden="true">
+              <Hourglass size={32} />
+            </span>
+            <h2 className="display h2">Aucun vote exprimé</h2>
+            <p className="muted">Personne n’est éliminé. Nouveau tour d’indices !</p>
+          </div>
+        )}
+        <div className="stack-sm" style={{ marginTop: 18 }}>
+          <ProgressBar view={view} />
+          <p className="subtle center">
+            <Seconds view={view} prefix="Suite dans" />
+          </p>
+        </div>
+      </section>
+
+      {result.votes.length > 0 && (
+        <section className="card card-tight" aria-labelledby="tally-title">
+          <div className="card-header">
+            <h2 id="tally-title" className="card-title">
+              <Vote size={18} /> Dépouillement
+            </h2>
+          </div>
+          <div className="tally">
+            {result.tally.map((t) => {
+              const p = pmap.get(t.playerId);
+              return (
+                <div key={t.playerId} className="tally-row">
+                  <Avatar avatar={p?.avatar ?? 0} size={30} label="" />
+                  <div className="tally-bar">
+                    <span style={{ width: `${(t.votes / max) * 100}%`, opacity: t.votes ? 1 : 0 }} />
+                    <em>{p?.name}</em>
+                  </div>
+                  <span className="tally-count">{t.votes}</span>
+                </div>
+              );
+            })}
+          </div>
+          <hr className="divider" />
+          <div className="ballot-detail">
+            {result.votes.map((v) => {
+              const voter = pmap.get(v.voterId);
+              const target = v.targetId ? pmap.get(v.targetId) : null;
+              return (
+                <span key={v.voterId} className="ballot-chip">
+                  <Avatar avatar={voter?.avatar ?? 0} size={22} label="" />
+                  {voter?.name} → {target ? target.name : <em>abstention</em>}
+                </span>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+// ───────────────────────── 8. tentative de Mr. White
+
+export function MrWhitePhase({ view }: { view: GameView }) {
+  const round = roundOf(view);
+  const attempt = round.mrWhite;
+  const pmap = playersById(view);
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!attempt) return null;
+  const mw = pmap.get(attempt.playerId);
+  const isMe = attempt.playerId === view.me.id;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await game.guess(attempt.attemptId, text);
+    setBusy(false);
+    if (!res.ok) setError(res.error.message);
+  };
+
+  return (
+    <section className="card card-glow center stack" aria-live="polite">
+      <span className="ghost-orb" aria-hidden="true">
+        <Ghost size={48} />
+      </span>
+      {!attempt.resolved ? (
+        isMe ? (
+          <form className="stack" onSubmit={submit} noValidate>
+            <div className="stack-sm">
+              <p className="eyebrow">Dernière chance</p>
+              <h2 className="display h2">Devine le mot des Civils</h2>
+              <p className="muted">Un seul essai. Majuscules, accents et espaces en trop ne comptent pas.</p>
+            </div>
+            <div className="input-wrap">
+              <input
+                className="input"
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setError(null);
+                }}
+                maxLength={GUESS_MAX}
+                placeholder="Le mot des Civils…"
+                autoComplete="off"
+                autoFocus
+                onKeyDown={submitOnEnter}
+                aria-label="Ta proposition"
+              />
+            </div>
+            <FormError message={error} />
+            <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={!text.trim() || busy}>
+              {busy ? <Spinner /> : <Sparkles size={20} />} Tenter ma chance
+            </button>
+          </form>
+        ) : (
+          <div className="stack-sm">
+            <p className="eyebrow">Dernière chance</p>
+            <h2 className="display h2">{mw?.name} était Mr. White</h2>
+            <p className="muted">Il tente de deviner le mot des Civils. S’il trouve, il gagne immédiatement…</p>
+          </div>
+        )
+      ) : (
+        <div className="stack-sm">
+          <p className="eyebrow">Tentative de Mr. White</p>
+          <h2 className="display h2 row" style={{ justifyContent: 'center' }}>
+            <CircleX size={28} style={{ color: 'var(--coral)' }} /> Raté !
+          </h2>
+          <p className="muted">
+            {attempt.guess ? (
+              <>
+                « <span className="quote">{attempt.guess}</span> » n’est pas le mot des Civils.
+              </>
+            ) : (
+              'Temps écoulé : aucune proposition.'
+            )}
+          </p>
+          <p className="subtle">La manche continue…</p>
+        </div>
+      )}
+      <ProgressBar view={view} />
+    </section>
+  );
+}
+
+// ───────────────────────── 9. fin de manche et revanche
+
+const VICTORY: Record<string, { title: string; icon: typeof Users }> = {
+  civils: { title: 'Victoire des Civils', icon: Users },
+  intrus: { title: 'Victoire des intrus', icon: VenetianMask },
+  mrwhite: { title: 'Mr. White l’emporte !', icon: Ghost },
+};
+
+export function EndPhase({ view }: { view: GameView }) {
+  const round = roundOf(view);
+  const end = round.end;
+  const pmap = playersById(view);
+  const [busy, setBusy] = useState(false);
+  if (!end) return null;
+  const isHost = view.hostId === view.me.id;
+  const iWon = end.winners.includes(view.me.id);
+  const myRole = end.roles.find((r) => r.playerId === view.me.id)?.role;
+  const v = VICTORY[end.winnerSide];
+  const eliminatedAt = new Map(round.eliminations.map((e) => [e.playerId, e.cycle]));
+
+  const replay = async () => {
+    setBusy(true);
+    const res = await game.replay();
+    setBusy(false);
+    if (!res.ok) toast(res.error.message, 'warn');
+  };
+
+  const personal = myRole
+    ? iWon
+      ? `Bravo, tu gagnes en tant que ${ROLE_LABEL[myRole]} !`
+      : `Perdu cette fois : tu étais ${ROLE_LABEL[myRole]}.`
+    : 'Tu joueras la prochaine manche.';
+
+  return (
+    <>
+      <section className={cls('card card-glow victory', `side-${end.winnerSide}`)} aria-live="polite">
+        <div className="sparkles" aria-hidden="true">
+          {Array.from({ length: 14 }, (_, i) => (
+            <i key={i} style={{ left: `${6 + i * 6.6}%`, top: `${-4 - (i % 3) * 6}%`, animationDelay: `${(i % 7) * 0.32}s` }} />
+          ))}
+        </div>
+        <div className="trophy" aria-hidden="true">
+          <Trophy size={42} />
+        </div>
+        <p className="eyebrow row" style={{ justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+          <v.icon size={14} /> Manche {round.number} terminée
+        </p>
+        <h2 className="display" style={{ marginTop: 6 }}>
+          {v.title}
+        </h2>
+        <p className="muted" style={{ marginTop: 8 }}>
+          {personal}
+        </p>
+        {end.winnerSide === 'mrwhite' && end.mrWhiteGuess && (
+          <p className="muted" style={{ marginTop: 6 }}>
+            Il a trouvé : « <span className="quote">{end.mrWhiteGuess}</span> »
+          </p>
+        )}
+      </section>
+
+      <section className="card card-tight stack-sm" aria-labelledby="words-title">
+        <div className="row-between">
+          <h2 id="words-title" className="card-title">
+            <Lock size={18} /> Les mots secrets
+          </h2>
+          <span className="pill">{end.packName}</span>
+        </div>
+        <div className="words-reveal">
+          <div className="word-tile role-civil">
+            <span className="lbl">
+              <Users size={13} /> Civils
+            </span>
+            <p className="w">{end.civilWord}</p>
+          </div>
+          <div className="word-tile role-undercover">
+            <span className="lbl">
+              <VenetianMask size={13} /> Undercover
+            </span>
+            <p className="w">{end.undercoverWord}</p>
+          </div>
+        </div>
+        {end.mrWhiteGuess && end.winnerSide !== 'mrwhite' && (
+          <p className="subtle">
+            Proposition de Mr. White : « {end.mrWhiteGuess} »
+          </p>
+        )}
+      </section>
+
+      <section className="card card-tight" aria-labelledby="roles-title">
+        <div className="card-header">
+          <h2 id="roles-title" className="card-title">
+            <VenetianMask size={18} /> Qui était qui ?
+          </h2>
+        </div>
+        <ul className="stack-sm" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {end.roles.map(({ playerId, role }, i) => {
+            const p: PublicPlayer | undefined = pmap.get(playerId);
+            const won = end.winners.includes(playerId);
+            const out = eliminatedAt.get(playerId);
+            return (
+              <li key={playerId} className={cls('final-row', won && 'is-winner')} style={{ animationDelay: `${0.05 * i}s` }}>
+                <Avatar avatar={p?.avatar ?? 0} size={40} label="" dimmed={out !== undefined} />
+                <div className="grow">
+                  <div className="player-name">
+                    {p?.name ?? 'Joueur parti'}
+                    {playerId === view.me.id && <span className="subtle"> (toi)</span>}
+                  </div>
+                  <div className="player-meta">{out !== undefined ? `Éliminé au tour ${out}` : 'Toujours en jeu'}</div>
+                </div>
+                <RoleChip role={role} />
+                {won && <Trophy size={18} className="win-mark" aria-label="Gagnant" />}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <div className="stack-sm">
+        {isHost ? (
+          <button type="button" className="btn btn-primary btn-lg btn-block" onClick={replay} disabled={busy}>
+            {busy ? <Spinner /> : <RefreshCw size={20} />} Rejouer avec le même groupe
+          </button>
+        ) : (
+          <div className="notice notice-violet" role="status">
+            <Hourglass size={18} />
+            <span>En attente de l’hôte pour lancer la revanche. Le salon et les paramètres sont conservés.</span>
+          </div>
+        )}
+        <button
+          type="button"
+          className="btn btn-quiet btn-block"
+          onClick={async () => {
+            const res = await leaveRoom();
+            if (res.ok) window.location.assign('/');
+          }}
+        >
+          <LogOut size={18} /> Quitter le salon
+        </button>
+      </div>
+    </>
+  );
+}

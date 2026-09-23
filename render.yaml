@@ -1,0 +1,14 @@
+# Blueprint Render : « New + » → « Blueprint » → sélectionner ce dépôt.
+services:
+  - type: web
+    name: undercover
+    runtime: node
+    plan: free # passer en « starter » pour éviter la mise en veille (voir README)
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY
+        value: "1"
