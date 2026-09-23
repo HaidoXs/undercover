@@ -3,7 +3,6 @@ import {
   CircleCheck,
   CircleX,
   Crosshair,
-  Drama,
   HeartHandshake,
   PartyPopper,
   Sandwich,
@@ -25,7 +24,7 @@ import {
   VenetianMask,
   Vote,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { CLUE_MAX, GUESS_MAX } from '../../../../shared/constants';
 import type { GameView, PublicPlayer, Role, RoundView } from '../../../../shared/types';
 import { Avatar } from '../../components/Avatar';
@@ -178,153 +177,15 @@ export function RevealPhase({ view }: { view: GameView }) {
 
 export function CluesPhase({ view }: { view: GameView }) {
   const round = roundOf(view);
-  const currentId = round.turn?.playerId;
-  const myTurn = currentId === view.me.id && canPlay(view);
-  const doneThisCycle = new Map(round.clues.filter((c) => c.cycle === round.cycle).map((c) => [c.playerId, c]));
+  const myTurn = round.turn?.playerId === view.me.id && canPlay(view);
 
   return (
     <>
+      <RoundProgress round={round} />
       {myTurn && round.turn && round.memeId !== view.me.id && <ClueForm view={view} turnId={round.turn.turnId} />}
       {myTurn && round.turn && round.memeId === view.me.id && <MemeForm view={view} turnId={round.turn.turnId} />}
       {view.me.secret && canPlay(view) && <SecretPeek secret={view.me.secret} extra={<MyRolePanel view={view} />} />}
-
-      <section className="card card-tight" aria-labelledby="order-title">
-        <div className="card-header" style={{ marginBottom: 10 }}>
-          <h2 id="order-title" className="card-title">
-            <Users size={18} /> Indices · Tour {round.cycle}
-          </h2>
-          <span className="pill">
-            {doneThisCycle.size}/{round.order.length}
-          </span>
-        </div>
-        <RoundProgress round={round} />
-        <ClueTrack view={view} currentId={currentId} done={doneThisCycle} />
-      </section>
     </>
-  );
-}
-
-function isInView(container: HTMLElement, el: HTMLElement): boolean {
-  // La piste est positionnée : offsetLeft est mesuré depuis son bord gauche.
-  return el.offsetLeft >= container.scrollLeft - 8 && el.offsetLeft + el.offsetWidth <= container.scrollLeft + container.clientWidth + 8;
-}
-
-/**
- * Cartes d'indices horizontales, dans l'ordre de passage.
- * La vue suit le joueur en cours, sauf si l'utilisateur est parti relire des indices précédents.
- */
-function ClueTrack({
-  view,
-  currentId,
-  done,
-}: {
-  view: GameView;
-  currentId: string | undefined;
-  done: Map<string, { text: string | null; mimed?: boolean }>;
-}) {
-  const round = roundOf(view);
-  const pmap = playersById(view);
-  const trackRef = useRef<HTMLOListElement>(null);
-  const followed = useRef<string | undefined>(undefined);
-
-  useLayoutEffect(() => {
-    const track = trackRef.current;
-    if (!track || !currentId) return;
-    const card = track.querySelector<HTMLElement>(`[data-player="${CSS.escape(currentId)}"]`);
-    if (!card) return;
-    const previous = followed.current ? track.querySelector<HTMLElement>(`[data-player="${CSS.escape(followed.current)}"]`) : null;
-    const first = followed.current === undefined;
-    followed.current = currentId;
-    // L'utilisateur relit d'anciens indices (la carte précédente n'est plus visible) : on ne bouge pas.
-    if (!first && previous && !isInView(track, previous)) return;
-    const target = card.offsetLeft - (track.clientWidth - card.offsetWidth) / 2;
-    const smooth = !first && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    track.scrollTo({ left: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
-  }, [currentId]);
-
-  return (
-    <ol ref={trackRef} className="clue-track" aria-label={`Indices du tour ${round.cycle}, dans l’ordre de passage`}>
-      {round.order.map((id, i) => {
-        const p = pmap.get(id);
-        const clue = done.get(id);
-        const isCurrent = id === currentId;
-        const state = clue
-          ? clue.mimed
-            ? 'indice mimé'
-            : clue.text === null
-              ? 'passé'
-              : `indice : ${clue.text}`
-          : isCurrent
-            ? round.memeId === id
-              ? 'mime en cours'
-              : 'réfléchit'
-            : 'à venir';
-        return (
-          <li
-            key={id}
-            data-player={id}
-            className={cls(
-              'clue-card',
-              isCurrent && 'is-current',
-              id === view.me.id && 'is-mine',
-              round.memeId === id && 'is-meme',
-              !clue && !isCurrent && 'is-upcoming',
-            )}
-            aria-current={isCurrent ? 'step' : undefined}
-            aria-label={`${i + 1}. ${p?.name ?? 'Joueur'}${id === view.me.id ? ' (toi)' : ''}, ${state}`}
-          >
-            <span className="cc-num" aria-hidden="true">
-              {i + 1}
-            </span>
-            <Avatar
-              avatar={p?.avatar ?? 0} photo={p?.photo}
-              size={40}
-              label=""
-              ring={isCurrent ? 'active' : undefined}
-              dimmed={!p?.connected}
-              badge={!p?.connected ? 'offline' : null}
-            />
-            <span className="cc-name" aria-hidden="true">
-              {p?.name}
-            </span>
-            {id === view.me.id && (
-              <span className="cc-me" aria-hidden="true">
-                toi
-              </span>
-            )}
-            <span className="cc-body" aria-hidden="true">
-              {clue ? (
-                clue.mimed ? (
-                  <span key="mimed" className="cc-mime">
-                    <Drama size={15} aria-hidden="true" /> Mimé
-                  </span>
-                ) : clue.text === null ? (
-                  <span key="passed" className="cc-passed">
-                    Passé
-                  </span>
-                ) : (
-                  <span key="text" className="cc-text">
-                    « {clue.text} »
-                  </span>
-                )
-              ) : isCurrent && round.memeId === id ? (
-                <span className="cc-mime">
-                  <Drama size={15} aria-hidden="true" /> Mime en cours
-                </span>
-              ) : isCurrent ? (
-                <span className="typing">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              ) : (
-                <span className="cc-wait">À venir</span>
-              )}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
@@ -788,20 +649,26 @@ export function EndPhase({ view }: { view: GameView }) {
   };
 
   const myLover = end.lovers?.includes(view.me.id) ?? false;
+  const myDuel = end.duel?.playerIds.includes(view.me.id) ? end.duel : null;
+  const opponent = myDuel ? pmap.get(myDuel.playerIds.find((id) => id !== view.me.id) as string)?.name : undefined;
   const personal = !myRole
     ? 'Tu joueras la prochaine manche.'
-    : end.winnerSide === 'draw'
-      ? 'Personne ne gagne cette fois.'
-      : iWon
-        ? `Bravo, tu gagnes ${end.winnerSide === 'lovers' ? 'avec ton âme sœur' : end.winnerSide === 'joyfool' ? 'en Fou de joie' : `en tant que ${ROLE_LABEL[myRole]}`} !`
-        : myLover
-          ? 'Perdu : un camp a gagné avant que le couple ne reste seul.'
-          : `Perdu cette fois : tu étais ${ROLE_LABEL[myRole]}.`;
+    : myDuel
+      ? myDuel.winnerId === view.me.id
+        ? `Bravo, tu gagnes ton duel : ton vote a éliminé ${opponent ?? 'ton adversaire'} !`
+        : 'Perdu : un Duelliste ne gagne qu’en éliminant son adversaire par son vote, jamais avec son camp.'
+      : end.winnerSide === 'draw'
+        ? 'Personne ne gagne cette fois.'
+        : iWon
+          ? `Bravo, tu gagnes ${end.winnerSide === 'lovers' ? 'avec ton âme sœur' : end.winnerSide === 'joyfool' ? 'en Fou de joie' : `en tant que ${ROLE_LABEL[myRole]}`} !`
+          : myLover
+            ? 'Perdu : un camp a gagné avant que le couple ne reste seul.'
+            : `Perdu cette fois : tu étais ${ROLE_LABEL[myRole]}.`;
 
   return (
     <>
       <section className={cls('card victory', `side-${end.winnerSide}`)} aria-live="polite">
-        {iWon && end.winnerSide !== 'draw' && <Confetti />}
+        {iWon && (end.winnerSide !== 'draw' || !!myDuel) && <Confetti />}
         <div className="victory-art" aria-hidden="true">
           {v.art}
         </div>
@@ -812,7 +679,7 @@ export function EndPhase({ view }: { view: GameView }) {
         <p className="muted" style={{ marginTop: 8 }}>
           {end.reason}
         </p>
-        <p className={cls('personal', iWon ? 'is-win' : myRole && end.winnerSide !== 'draw' && 'is-loss')}>
+        <p className={cls('personal', iWon ? 'is-win' : myRole && (end.winnerSide !== 'draw' || myDuel) && 'is-loss')}>
           {iWon && <Trophy size={18} aria-hidden="true" />}
           {personal}
         </p>
@@ -925,7 +792,7 @@ export function EndPhase({ view }: { view: GameView }) {
               <span>
                 Duel : <strong>{pmap.get(end.duel.playerIds[0])?.name}</strong> contre <strong>{pmap.get(end.duel.playerIds[1])?.name}</strong>
                 {' — '}
-                {end.duel.draw ? 'duel nul' : end.duel.winnerId ? `remporté par ${pmap.get(end.duel.winnerId)?.name}` : 'personne n’est tombé'}
+                {end.duel.winnerId ? `remporté par ${pmap.get(end.duel.winnerId)?.name}, qui a éliminé son adversaire par son vote` : 'aucun vainqueur'}
               </span>
             </p>
           )}

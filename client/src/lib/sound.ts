@@ -2,7 +2,8 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useApp } from '../state/store';
 
 /**
- * Tic-tac discret synthétisé avec Web Audio (aucun fichier à télécharger).
+ * Sons discrets synthétisés avec Web Audio (aucun fichier à télécharger) : tic-tac du chrono et clic des boutons,
+ * tous deux soumis au même réglage « son coupé ».
  * - Les navigateurs n'autorisent le son qu'après un geste de l'utilisateur : le contexte audio
  *   est créé et réactivé au premier appui ou clic, jamais avant.
  * - Un seul minuteur existe à la fois : démarrer un tic-tac arrête le précédent (aucun son superposé).
@@ -100,6 +101,50 @@ function click(high: boolean): void {
   osc.connect(gain).connect(ctx.destination);
   osc.start(t);
   osc.stop(t + 0.07);
+}
+
+/** « Toc » feutré des boutons : plus grave et plus bref que le tic-tac, volume très bas. */
+function tap(): void {
+  if (muted || !ctx || ctx.state !== 'running') return;
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(620, t);
+  osc.frequency.exponentialRampToValueAtTime(380, t + 0.04);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.05, t + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.06);
+}
+
+const PRESSABLE =
+  'button, [role="button"], [role="switch"], [role="tab"], input[type="button"], input[type="submit"], input[type="reset"], a.btn';
+/** Deux activations plus rapprochées ne donnent qu'un son (événements synthétiques en double). */
+const TAP_GAP_MS = 40;
+let lastTap = -Infinity;
+
+/**
+ * À appeler une fois : un son discret à chaque activation d'un bouton (souris, toucher ou clavier).
+ * Rien au survol ni sur un bouton désactivé. Le son est joué juste après le traitement du clic :
+ * le bouton qui coupe les sons reste muet, celui qui les rétablit se fait entendre.
+ */
+export function installClickSound(): void {
+  document.addEventListener(
+    'click',
+    (event) => {
+      const target = event.target as Element | null;
+      const el = typeof target?.closest === 'function' ? target.closest(PRESSABLE) : null;
+      if (!el || el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return;
+      const now = Date.now();
+      if (now - lastTap < TAP_GAP_MS) return;
+      lastTap = now;
+      window.setTimeout(tap, 0);
+    },
+    true,
+  );
 }
 
 let timer: number | null = null;

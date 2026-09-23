@@ -72,7 +72,7 @@ Toutes sont facultatives pour jouer (modèle commenté : `.env.example`, chargé
 ## Comptes, photos et thème
 
 - **Sans compte**, tout fonctionne comme avant. Le compte garde pseudo, avatar (ou photo) et préférences
-  (thème, musique, tic-tac) d'un appareil à l'autre. L'adresse e-mail n'est jamais envoyée aux autres joueurs.
+  (thème, musique, sons) d'un appareil à l'autre. L'adresse e-mail n'est jamais envoyée aux autres joueurs.
 - **Connexion en pleine partie** : le socket est rouvert avec la session, la place est reprise par son jeton puis
   liée au compte — même joueur, même rôle, même progression. Un compte déjà assis dans un salon reprend sa place
   depuis un autre appareil (« Ta place t'attend ») au lieu de créer un second joueur.
@@ -229,13 +229,16 @@ export default definePack({
 - **Thème précis** (réglage de l'hôte, désactivé par défaut) : toutes les paires viennent de l'univers choisi parmi
   ceux des packs sélectionnés, annoncé à tous ; impossible à activer si aucun univers n'est disponible.
 - Tic-tac discret pendant les 10 dernières secondes d'un indice ou de la tentative de Mr. White
-  (plus rapide sur les 5 dernières), pour le seul joueur qui doit agir ; bouton pour couper les sons, choix mémorisé.
+  (plus rapide sur les 5 dernières), pour le seul joueur qui doit agir.
+- Petit « toc » discret à l'activation d'un bouton (jamais au survol ni sur un bouton désactivé) ; un seul bouton
+  coupe ou rétablit tous les sons (clics et tic-tac), choix mémorisé.
 - Indice interdit s'il donne le mot (égalité après normalisation, ou mot contenu dans l'indice).
   Temps écoulé ou joueur absent : « Passé ».
 - Vote secret et définitif, pas contre soi-même ; on voit qui a voté, jamais contre qui avant la clôture.
   Absence de vote = abstention. Égalité : second scrutin limité aux ex æquo, tous les joueurs en jeu votent.
   Égalité persistante ou aucun vote : personne n'est éliminé, nouveau tour d'indices.
 - L'éliminé voit son rôle révélé (jamais son mot) et suit la manche sans jouer.
+- Un éliminé qui n'a plus d'influence sur la manche voit, lui seul, le rôle de chaque joueur encore en vie (le serveur ne transmet ces rôles qu'à lui). Le Fantôme et la Justice n'y ont accès qu'en fin de manche ; la Vengeuse après sa décision ; Mr. White après sa tentative.
 - Mr. White éliminé : une tentative chronométrée ; casse, accents, espaces superflus, tirets et
   apostrophes typographiques ignorés, sans correspondance approximative. Réussite = victoire immédiate.
 - Puis : plus d'intrus → victoire des Civils ; intrus en jeu ≥ Civils restants → victoire des intrus.
@@ -254,7 +257,7 @@ Les textes font foi dans `shared/specialRoles.ts`.
 | Les Amoureux | 5 | Couple formé par le serveur, mort liée. Gagnent seuls s'ils sont les deux derniers en vie. |
 | Mr. Meme | 3 | À chaque tour d'indices, un joueur différent sans autre rôle mime son indice (« Mime terminé »). |
 | La Vengeuse | 5 | Éliminée, emporte un joueur en vie (15 s) ; sans choix, elle renonce. |
-| Les Duellistes | 5 | Le premier des deux éliminé perd le duel, annoncé en fin de manche ; chute simultanée = duel nul. |
+| Les Duellistes | 5 | Ne gagnent jamais avec leur camp. Un Duelliste gagne seul s'il vote contre son adversaire lors du scrutin qui l'élimine ; toute autre chute de l'un des deux clôt le duel sans vainqueur. |
 | Le Fantôme | 3 | Éliminé, il discute et vote encore, sans jamais compter comme vivant ni être ciblé. |
 | Le Vendeur de Falafels | 4 | Offre un falafel au début : protection (annule une élimination par scrutin) ou sabotage (prive de vote au prochain scrutin), tiré à 50/50. |
 | Le Boomerang | 3 | Une fois : les votes contre lui reviennent à leurs auteurs, un seul recalcul. |

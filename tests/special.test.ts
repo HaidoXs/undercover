@@ -77,7 +77,7 @@ function start(
   const lovers = pairOf('lovers');
   r.lovers = lovers.length === 2 ? [lovers[0], lovers[1]] : null;
   const duel = pairOf('duelists');
-  r.duel = duel.length === 2 ? { a: duel[0], b: duel[1], winnerId: null, draw: false, done: false } : null;
+  r.duel = duel.length === 2 ? { a: duel[0], b: duel[1], winnerId: null, done: false } : null;
   r.falafel = opts.falafel
     ? { vendorId: ids[opts.falafel.vendor], targetId: ids[opts.falafel.target], effect: opts.falafel.effect, used: false, sabotageCycle: null }
     : null;
@@ -310,25 +310,155 @@ describe('Vengeuse', () => {
 });
 
 describe('Duellistes', () => {
-  it('le premier éliminé perd le duel, annoncé sans finir la manche', () => {
+  // 0 hôte · 1 et 2 duellistes civils · 5 undercover
+  const roles: Role[] = ['civil', 'civil', 'civil', 'civil', 'civil', 'undercover'];
+
+  it('gagne seul en votant contre son adversaire au scrutin qui l’élimine, sans finir la manche ni gagner avec son camp', () => {
     const g = lobby(6);
-    const r = start(g, ['civil', 'civil', 'civil', 'civil', 'civil', 'undercover'], { 1: 'duelists', 2: 'duelists' });
+    const r = start(g, roles, { 1: 'duelists', 2: 'duelists' });
     playClues(g);
     vote(g, [[0, 1], [1, 0], [2, 1], [3, 1], [4, 1], [5, 1]]);
     expect(r.result!.events).toContainEqual({ type: 'duel', winnerId: g.ids[2], loserId: g.ids[1] });
+    expect(r.duel).toMatchObject({ done: true, winnerId: g.ids[2] });
     advance(g, 20_000);
     expect(g.room.phase).toBe('clues');
+    // Les Civils l'emportent ensuite : le duelliste gagnant le reste, l'autre ne gagne pas avec son camp.
+    playClues(g);
+    vote(g, [[0, 5], [2, 5], [3, 5], [4, 5], [5, 0]]);
+    advance(g, 20_000);
+    expect(r.end!.winnerSide).toBe('civils');
+    expect([...r.end!.winners].sort()).toEqual([g.ids[0], g.ids[2], g.ids[3], g.ids[4]].sort());
+    expect(r.end!.duel).toEqual({ playerIds: [g.ids[1], g.ids[2]], winnerId: g.ids[2] });
   });
 
-  it('déclare un duel nul si les deux tombent pendant la même résolution', () => {
+  it('ne gagne rien si son adversaire est éliminé sans son vote, et ne partage jamais la victoire de son camp', () => {
     const g = lobby(6);
-    const r = start(g, ['civil', 'civil', 'civil', 'civil', 'civil', 'undercover'], { 1: 'lovers', 2: 'lovers' });
-    // Cas limite forcé : deux duellistes liés par un même enchaînement.
-    r.duel = { a: g.ids[1], b: g.ids[2], winnerId: null, draw: false, done: false };
+    const r = start(g, roles, { 1: 'duelists', 2: 'duelists' });
+    playClues(g);
+    // Le duelliste 2 vote contre l'hôte : son adversaire tombe sans son vote.
+    vote(g, [[0, 1], [1, 0], [2, 0], [3, 1], [4, 1], [5, 1]]);
+    expect(r.result!.events).toContainEqual({ type: 'duel-void', playerIds: [g.ids[1], g.ids[2]] });
+    expect(r.duel).toMatchObject({ done: true, winnerId: null });
+    advance(g, 20_000);
+    playClues(g);
+    vote(g, [[0, 5], [2, 5], [3, 5], [4, 5], [5, 0]]);
+    advance(g, 20_000);
+    expect(r.end!.winnerSide).toBe('civils');
+    expect([...r.end!.winners].sort()).toEqual([g.ids[0], g.ids[3], g.ids[4]].sort());
+    expect(r.end!.duel).toEqual({ playerIds: [g.ids[1], g.ids[2]], winnerId: null });
+  });
+
+  it('ne gagne rien quand la Justice désigne son adversaire, même s’il avait voté contre lui', () => {
+    const g = lobby(6);
+    const r = start(g, roles, { 0: 'justice', 1: 'duelists', 2: 'duelists' });
+    playClues(g);
+    // Égalité 3 contre 3 entre le duelliste 1 et le joueur 3 : la Justice tranche.
+    vote(g, [[0, 1], [2, 1], [3, 1], [1, 3], [4, 3], [5, 3]]);
+    expect(g.room.phase).toBe('power');
+    g.room.usePower(g.ids[0], r.power!.id, g.ids[1], g.now.t);
+    expect(r.result!.events).toContainEqual({ type: 'duel-void', playerIds: [g.ids[1], g.ids[2]] });
+    expect(r.duel!.winnerId).toBeNull();
+  });
+
+  it('ne gagne rien quand son adversaire suit son âme sœur', () => {
+    const g = lobby(7);
+    const r = start(g, ['civil', 'civil', 'civil', 'civil', 'civil', 'civil', 'undercover'], { 1: 'duelists', 2: 'duelists', 3: 'lovers', 4: 'lovers' });
+    // Cas limite forcé : l'adversaire du duelliste 2 est lié au joueur 3.
+    r.lovers = [g.ids[3], g.ids[1]];
+    playClues(g);
+    vote(g, [[0, 3], [2, 3], [4, 3], [5, 3], [1, 0], [3, 0], [6, 0]]);
+    expect(r.result!.events).toContainEqual({ type: 'duel-void', playerIds: [g.ids[1], g.ids[2]] });
+    expect(r.duel!.winnerId).toBeNull();
+  });
+
+  it('ne gagne pas en Mr. White qui devine le mot ; seul son adversaire qui l’a éliminé par son vote gagne', () => {
+    const g = lobby(6);
+    const r = start(g, ['civil', 'civil', 'civil', 'civil', 'undercover', 'mrwhite'], { 1: 'duelists', 5: 'duelists' });
+    playClues(g);
+    vote(g, [[0, 5], [1, 5], [2, 5], [3, 5], [4, 5], [5, 0]]);
+    advance(g, 20_000);
+    expect(g.room.phase).toBe('mrwhite');
+    g.room.submitGuess(g.ids[5], r.mrWhite!.attemptId, r.pair.civil, g.now.t);
+    expect(r.end).toMatchObject({ winnerSide: 'mrwhite', winners: [g.ids[1]] });
+  });
+});
+
+describe('rôles visibles après élimination', () => {
+  const aliveRoles = (v: GameView) => Object.fromEntries(v.players.filter((p) => p.status === 'alive').map((p) => [p.id, p.role ?? null]));
+  const nothingShown = (v: GameView) => Object.values(aliveRoles(v)).every((role) => role === null);
+
+  it('révèle les rôles des vivants au seul éliminé, jamais sur un simple vote reçu, et plus à la manche suivante', () => {
+    const g = lobby(6);
+    start(g, ['civil', 'civil', 'civil', 'civil', 'civil', 'undercover'], { 3: 'boomerang' });
+    playClues(g);
+    // Votes reçus contre le joueur 1, scrutin encore ouvert : rien n'est révélé.
+    vote(g, [[0, 1], [2, 1], [3, 1]]);
+    expect(view(g, 1).me.seesRoles).toBe(false);
+    expect(nothingShown(view(g, 1))).toBe(true);
+    vote(g, [[1, 0], [4, 1], [5, 1]]);
+    expect(g.room.phase).toBe('result');
+
+    const out = view(g, 1);
+    expect(out.me.seesRoles).toBe(true);
+    expect(aliveRoles(out)).toEqual({ [g.ids[0]]: 'civil', [g.ids[2]]: 'civil', [g.ids[3]]: 'civil', [g.ids[4]]: 'civil', [g.ids[5]]: 'undercover' });
+    expect(out.players.find((p) => p.id === g.ids[3])!.special).toBe('boomerang');
+    // Les vivants ne reçoivent toujours ni rôle de vivant ni rôle spécial caché.
+    for (const i of [0, 2, 3, 4, 5]) {
+      const v = view(g, i);
+      expect(v.me.seesRoles).toBe(false);
+      expect(nothingShown(v)).toBe(true);
+      expect(v.players.find((p) => p.id === g.ids[3])!.special).toBeUndefined();
+    }
+    // Dérivé de l'état de la manche : toujours vrai au tour suivant.
+    advance(g, 20_000);
+    expect(g.room.phase).toBe('clues');
+    expect(view(g, 1).me.seesRoles).toBe(true);
+
+    // Fin de manche puis revanche : la visibilité repart de zéro.
+    playClues(g);
+    vote(g, [[0, 5], [2, 5], [3, 5], [4, 5], [5, 0]]);
+    advance(g, 20_000);
+    expect(g.room.phase).toBe('ended');
+    g.room.replay(g.ids[0]);
+    readyAll(g);
+    g.room.start(g.ids[0], g.now.t);
+    const fresh = view(g, 1);
+    expect(fresh.me.seesRoles).toBe(false);
+    expect(fresh.players.every((p) => p.role === undefined)).toBe(true);
+  });
+
+  it('ne révèle rien au Fantôme ni à la Justice éliminés, qui agissent encore', () => {
+    const g = lobby(6);
+    start(g, ['civil', 'civil', 'civil', 'civil', 'civil', 'undercover'], { 1: 'ghost', 2: 'justice' });
     playClues(g);
     vote(g, [[0, 1], [1, 0], [2, 1], [3, 1], [4, 1], [5, 1]]);
-    expect(r.result!.events).toContainEqual({ type: 'duel-draw', playerIds: [g.ids[1], g.ids[2]] });
-    expect(r.duel).toMatchObject({ done: true, draw: true, winnerId: null });
+    expect(view(g, 1).me.seesRoles).toBe(false);
+    expect(nothingShown(view(g, 1))).toBe(true);
+    advance(g, 20_000);
+    playClues(g);
+    vote(g, [[0, 2], [1, 0], [2, 0], [3, 2], [4, 2], [5, 2]]);
+    expect(view(g, 2).me.seesRoles).toBe(false);
+    expect(nothingShown(view(g, 2))).toBe(true);
+  });
+
+  it('attend la décision de la Vengeuse et la tentative de Mr. White', () => {
+    const g = lobby(6);
+    const r = start(g, ['civil', 'civil', 'civil', 'civil', 'undercover', 'mrwhite'], { 1: 'avenger' });
+    playClues(g);
+    vote(g, [[0, 1], [1, 0], [2, 1], [3, 1], [4, 1], [5, 1]]);
+    expect(g.room.phase).toBe('power');
+    expect(view(g, 1).me.seesRoles).toBe(false);
+    g.room.usePower(g.ids[1], r.power!.id, g.ids[5], g.now.t);
+    expect(g.room.phase).toBe('result');
+    expect(view(g, 1).me.seesRoles).toBe(true);
+    // Mr. White emporté par la Vengeuse : rien tant que sa tentative n'est pas jouée.
+    expect(view(g, 5).me.seesRoles).toBe(false);
+    advance(g, 20_000);
+    expect(g.room.phase).toBe('mrwhite');
+    expect(view(g, 5).me.seesRoles).toBe(false);
+    g.room.submitGuess(g.ids[5], r.mrWhite!.attemptId, 'raté', g.now.t);
+    expect(view(g, 5).me.seesRoles).toBe(true);
+    expect(aliveRoles(view(g, 5))[g.ids[4]]).toBe('undercover');
   });
 });
 

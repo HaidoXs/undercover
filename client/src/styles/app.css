@@ -2440,85 +2440,6 @@ details.collapsible[open] > summary {
   transition: width 0.3s linear;
 }
 
-/* liste des joueurs */
-.rail {
-  display: flex;
-  gap: 12px;
-  margin: 0;
-  overflow-x: auto;
-  padding: 8px 4px 10px;
-  scrollbar-width: none;
-}
-
-.rail::-webkit-scrollbar {
-  display: none;
-}
-
-.rail-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  width: 66px;
-  text-align: center;
-}
-
-.rail-item .n {
-  max-width: 100%;
-  font-size: 0.8rem;
-  font-weight: 750;
-  color: var(--ink-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rail-item.is-current .n {
-  color: var(--ink);
-  font-weight: 900;
-}
-
-.rail-item.is-out .n {
-  color: var(--ink-3);
-  text-decoration: line-through;
-  text-decoration-color: var(--coral-ink);
-  text-decoration-thickness: 2px;
-}
-
-.rail-extra {
-  display: none;
-}
-
-@media (min-width: 960px) {
-  .rail {
-    flex-direction: column;
-    gap: 6px;
-    overflow: visible;
-    padding: 0;
-  }
-  .rail-item {
-    flex-direction: row;
-    width: auto;
-    gap: 12px;
-    text-align: left;
-    padding: 6px 8px;
-    border-radius: 14px;
-    border: 2px solid transparent;
-  }
-  .rail-item .n {
-    font-size: 0.95rem;
-  }
-  .rail-item.is-current {
-    background: var(--orange-soft);
-    border-color: var(--edge);
-  }
-  .rail-extra {
-    display: inline-flex;
-    margin-left: auto;
-  }
-}
-
 /* carte secrète à retourner */
 .secret {
   perspective: 1400px;
@@ -2778,65 +2699,6 @@ details.collapsible[open] > summary {
   border-radius: 50%;
   border: 2px solid var(--edge);
   background: var(--violet);
-}
-
-/* historique des indices */
-.clue-log {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.clue-cycle-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-display);
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 8px;
-}
-
-.clue-cycle-title::after {
-  content: '';
-  flex: 1;
-  border-top: 2px dashed var(--line-strong);
-}
-
-.clue {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 0;
-  animation: rise 0.35s var(--ease) both;
-}
-
-.clue-body {
-  min-width: 0;
-  flex: 1;
-}
-
-.clue-author {
-  font-size: 0.82rem;
-  font-weight: 800;
-  color: var(--ink-3);
-}
-
-.clue-text {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 560;
-}
-
-.clue-text.is-passed {
-  font-family: var(--font-ui);
-  font-size: 0.95rem;
-  font-weight: 700;
-  font-style: italic;
-  color: var(--ink-3);
 }
 
 .typing {
@@ -3346,160 +3208,230 @@ details.collapsible[open] > summary {
 .word-tile .w,
 .secret-word,
 .peek-word,
-.clue-text,
-.cc-text,
 .vote-card .vc-clues {
   overflow-wrap: break-word;
   hyphens: auto;
   -webkit-hyphens: auto;
 }
 
-/* ───────────── cartes d'indices horizontales ───────────── */
+/* ───────────── joueurs et indices (vue d'ensemble) ─────────────
+   Grille adaptative sans défilement interne : chaque joueur et tous ses indices restent visibles. */
 
-.clue-track {
-  position: relative;
-  display: flex;
-  gap: 12px;
-  margin: 0 -6px;
-  padding: 14px 6px 14px;
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 148px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
   list-style: none;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scroll-padding-inline: 16px;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
 }
 
-.clue-track::-webkit-scrollbar {
-  height: 8px;
-}
-
-.clue-track::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--line-strong);
-}
-
-.clue-card {
-  position: relative;
-  flex: 0 0 auto;
-  width: clamp(142px, 40vw, 172px);
-  min-height: 166px;
+.board-cell {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 18px 12px 14px;
-  border-radius: 18px;
-  border: 2px solid var(--edge);
-  background: var(--paper);
-  box-shadow: var(--pop-sm);
-  text-align: center;
-  scroll-snap-align: center;
-  transform: rotate(-1.2deg);
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px 9px;
+  border-radius: 14px;
+  border: 2px solid var(--line-strong);
+  background: var(--paper-2);
   transition:
-    transform 0.35s var(--ease-bounce),
     background-color 0.25s var(--ease),
-    box-shadow 0.25s var(--ease);
+    border-color 0.25s var(--ease);
 }
 
-.clue-card:nth-child(even) {
-  transform: rotate(1.2deg);
-}
-
-.clue-card.is-current {
-  border-width: 3px;
-  background: var(--yellow-soft);
-  box-shadow: var(--pop);
-  transform: translateY(-4px) rotate(0deg);
-}
-
-.clue-card.is-mine {
+.board-cell.is-mine {
   background: var(--dots), var(--orange-soft);
 }
 
-.clue-card.is-upcoming {
-  background: transparent;
-  border: 2px dashed var(--line-strong);
-  box-shadow: none;
+.board-cell.is-current {
+  border-color: var(--edge);
+  background: var(--yellow-soft);
+  box-shadow: var(--pop-sm);
 }
 
-.cc-num {
-  position: absolute;
-  top: -10px;
-  left: 10px;
+.board-cell.is-out {
+  border-style: dashed;
+  background: transparent;
+}
+
+.bc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.bc-num {
   display: grid;
   place-items: center;
-  min-width: 26px;
-  height: 26px;
+  flex: none;
+  min-width: 24px;
+  height: 24px;
   padding: 0 4px;
   border-radius: 999px;
   border: 2px solid var(--edge);
   background: var(--paper);
   font-family: var(--font-display);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 650;
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
+}
+
+.is-current .bc-num {
+  background: var(--orange);
+  color: var(--on-accent);
+}
+
+/* Cellule étroite : le pseudo prend sa propre ligne plutôt que d'être coupé au milieu d'un mot. */
+.bc-name {
+  flex: 1 1 7.5em;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+
+.bc-me {
+  font-weight: 700;
+  color: var(--ink-3);
+}
+
+.is-out .bc-name {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--coral-ink);
+  text-decoration-thickness: 2px;
+}
+
+.bc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bc-tags:empty {
+  display: none;
+}
+
+/* Dans une cellule étroite, les pastilles longues passent à la ligne au lieu de déborder. */
+.bc-tags .role-chip,
+.bc-tags .special-chip {
+  min-height: 24px;
+  max-width: 100%;
+  padding: 1px 8px;
+  font-size: 0.78rem;
+  white-space: normal;
+  line-height: 1.15;
+}
+
+.bc-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 2px solid var(--line-strong);
+  background: var(--paper);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.bc-tag.is-turn {
+  border-color: var(--edge);
+  background: var(--orange);
+  color: var(--on-accent);
+}
+
+.bc-tag.is-out {
+  border-color: var(--coral-ink);
+  background: var(--coral-soft);
+  color: var(--coral-ink);
+}
+
+.bc-clues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bc-clue {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--ink-2);
+}
+
+.bc-clue.is-now {
+  color: var(--ink);
+}
+
+.bc-cycle {
+  flex: none;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
-.is-current .cc-num {
-  background: var(--orange);
-}
-
-.cc-me {
-  position: absolute;
-  top: -10px;
-  right: 10px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper);
+.bc-text {
+  min-width: 0;
   font-family: var(--font-display);
-  font-size: 0.74rem;
-  font-weight: 600;
-}
-
-.cc-name {
-  max-width: 100%;
-  font-size: 0.88rem;
-  font-weight: 800;
-  color: var(--ink-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cc-body {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  color: var(--orange-ink);
-}
-
-.cc-text {
-  font-family: var(--font-display);
-  font-size: 1.12rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 560;
   line-height: 1.25;
-  color: var(--ink);
+  overflow-wrap: break-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+.bc-clue.is-now .bc-text {
+  font-weight: 620;
   animation: flip-in 0.45s var(--ease-bounce) both;
 }
 
-.cc-passed {
-  font-size: 0.92rem;
+.bc-passed {
+  font-size: 0.9rem;
   font-weight: 700;
   font-style: italic;
   color: var(--ink-3);
-  animation: flip-in 0.45s var(--ease-bounce) both;
 }
 
-.cc-wait {
-  font-size: 0.84rem;
-  font-weight: 700;
-  color: var(--ink-3);
+.bc-thinking {
+  display: inline-flex;
+  align-self: center;
+  color: var(--orange-ink);
+}
+
+/* Pendant les indices, sur ordinateur : actions à gauche, tableau complet dans la colonne large. */
+@media (min-width: 960px) {
+  .shell.wide.shell-clues {
+    max-width: 1480px;
+    padding-bottom: 16px;
+  }
+  .game-grid.is-clues {
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  }
+  /* Cellules assez larges pour qu'un indice tienne presque toujours sur une ligne : le tableau reste bas. */
+  .game-grid.is-clues .board-grid {
+    grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  }
+}
+
+@media (max-width: 400px) {
+  .board.card {
+    padding: 12px;
+  }
 }
 
 /* ───────────── fenêtres ───────────── */
@@ -4121,7 +4053,6 @@ dialog.sheet::backdrop {
 .personal.is-win,
 .win-mark,
 .secret-front,
-.is-current .cc-num,
 .phase-badge,
 .pack-card[aria-pressed='true'] .pack-art,
 [aria-pressed='true'] > .select-state .select-check,

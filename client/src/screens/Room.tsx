@@ -50,7 +50,7 @@ export function TopBar({ view, onLeft, children }: { view: GameView; onLeft: () 
   );
 }
 
-/** Menu du téléphone : musique, tic-tac, thème, compte et règles, avec des lignes faciles à toucher. */
+/** Menu du téléphone : musique, sons, thème, compte et règles, avec des lignes faciles à toucher. */
 function SettingsMenu({ roles }: { roles: readonly SpecialRoleId[] }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<'menu' | 'account' | 'help'>('menu');
@@ -80,8 +80,8 @@ function SettingsMenu({ roles }: { roles: readonly SpecialRoleId[] }) {
               <Music size={20} /> <span className="grow">Musique d’ambiance</span> <span className="menu-state">{music ? 'Activée' : 'Coupée'}</span>
             </button>
             <button type="button" className="menu-row" aria-pressed={!muted} onClick={() => { setMuted(!muted); pushPrefs(); }}>
-              {muted ? <VolumeX size={20} /> : <Volume2 size={20} />} <span className="grow">Tic-tac du chrono</span>{' '}
-              <span className="menu-state">{muted ? 'Coupé' : 'Activé'}</span>
+              {muted ? <VolumeX size={20} /> : <Volume2 size={20} />} <span className="grow">Sons (clics et tic-tac)</span>{' '}
+              <span className="menu-state">{muted ? 'Coupés' : 'Activés'}</span>
             </button>
             <button type="button" className="menu-row" onClick={() => { setThemePref(theme === 'dark' ? 'light' : 'dark'); pushPrefs(); }}>
               {theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />} <span className="grow">Thème</span>{' '}
@@ -125,16 +125,16 @@ function MusicToggle() {
   );
 }
 
-/** Coupe ou réactive les sons ; le choix est mémorisé sur cet appareil. */
-function SoundToggle() {
+/** Coupe ou réactive tous les sons (clics et tic-tac) ; le choix est mémorisé sur cet appareil. */
+export function SoundToggle() {
   const muted = useMuted();
   return (
     <button
       type="button"
       className="icon-btn"
       aria-pressed={muted}
-      aria-label={muted ? 'Réactiver le tic-tac' : 'Couper le tic-tac'}
-      title={muted ? 'Réactiver le tic-tac' : 'Couper le tic-tac'}
+      aria-label={muted ? 'Réactiver les sons' : 'Couper les sons'}
+      title={muted ? 'Réactiver les sons' : 'Couper les sons'}
       onClick={() => {
         setMuted(!muted);
         pushPrefs();

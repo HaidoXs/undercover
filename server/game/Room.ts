@@ -209,7 +209,8 @@ interface Round {
   memeId: string | null;
   memeUsed: Set<string>;
   lovers: [string, string] | null;
-  duel: { a: string; b: string; winnerId: string | null; draw: boolean; done: boolean } | null;
+  /** winnerId : le Duelliste qui a éliminé son adversaire par son vote · done : l'un des deux est tombé. */
+  duel: { a: string; b: string; winnerId: string | null; done: boolean } | null;
   falafel: Falafel | null;
   boomerangUsed: boolean;
   avengerUsed: boolean;
@@ -572,7 +573,7 @@ export class Room {
       const holders = pool.splice(0, specialRole(id).slots);
       for (const h of holders) special.set(h, id);
       if (id === 'lovers') lovers = [holders[0], holders[1]];
-      if (id === 'duelists') duel = { a: holders[0], b: holders[1], winnerId: null, draw: false, done: false };
+      if (id === 'duelists') duel = { a: holders[0], b: holders[1], winnerId: null, done: false };
       if (id === 'falafel') {
         falafel = { vendorId: holders[0], targetId: null, effect: randomInt(2) === 0 ? 'protect' : 'sabotage', used: false, sabotageCycle: null };
       }
@@ -939,18 +940,17 @@ export class Room {
     const r = this.round as Round;
     const res = r.resolution as Resolution;
     const d = r.duel;
-    if (d && !d.done) {
-      const deadA = res.dead.includes(d.a);
-      const deadB = res.dead.includes(d.b);
-      if (deadA && deadB) {
-        d.done = true;
-        d.draw = true;
-        res.events.push({ type: 'duel-draw', playerIds: [d.a, d.b] });
-      } else if (deadA || deadB) {
-        d.done = true;
-        d.winnerId = deadA ? d.b : d.a;
-        res.events.push({ type: 'duel', winnerId: d.winnerId, loserId: deadA ? d.a : d.b });
+    if (d && !d.done && (res.dead.includes(d.a) || res.dead.includes(d.b))) {
+      // Le duel s'arrête à la première chute. Seul gagne le Duelliste dont le vote a contribué
+      // à l'élimination directe de son adversaire par le scrutin (second scrutin compris).
+      d.done = true;
+      for (const loserId of [d.a, d.b]) {
+        const winnerId = loserId === d.a ? d.b : d.a;
+        const byVote = res.events.some((e) => e.type === 'eliminated' && e.playerId === loserId && e.cause === 'vote');
+        if (byVote && res.base.votes.some((v) => v.voterId === winnerId && v.targetId === loserId)) d.winnerId = winnerId;
       }
+      if (d.winnerId) res.events.push({ type: 'duel', winnerId: d.winnerId, loserId: d.winnerId === d.a ? d.b : d.a });
+      else res.events.push({ type: 'duel-void', playerIds: [d.a, d.b] });
     }
     const primary = res.primary;
     const outcome: VoteOutcome = primary
@@ -1111,9 +1111,13 @@ export class Room {
   private endRound(victory: Victory): void {
     const r = this.round as Round;
     const f = r.falafel;
+    // Les Duellistes ne gagnent jamais avec un camp : seulement en éliminant leur adversaire.
+    const duelists = r.duel ? [r.duel.a, r.duel.b] : [];
+    const winners = victory.winners.filter((id) => !duelists.includes(id));
+    if (r.duel?.winnerId) winners.push(r.duel.winnerId);
     r.end = {
       winnerSide: victory.side,
-      winners: victory.winners,
+      winners,
       reason: victory.reason,
       civilWord: r.pair.civil,
       undercoverWord: r.pair.undercover,
@@ -1126,7 +1130,7 @@ export class Room {
       }),
       mrWhiteGuess: r.mrWhite?.guess ?? null,
       lovers: r.lovers ? [...r.lovers] : null,
-      duel: r.duel ? { playerIds: [r.duel.a, r.duel.b], winnerId: r.duel.winnerId, draw: r.duel.draw } : null,
+      duel: r.duel ? { playerIds: [r.duel.a, r.duel.b], winnerId: r.duel.winnerId } : null,
       falafel: f && f.targetId ? { vendorId: f.vendorId, targetId: f.targetId, effect: f.effect, used: f.used } : null,
     };
     r.power = null;
@@ -1285,6 +1289,22 @@ export class Room {
     return undefined;
   }
 
+  /**
+   * Éliminé qui n'a plus aucune influence sur la manche : il peut voir les rôles des vivants.
+   * Exclus : le Fantôme (vote encore) et la Justice (tranche encore), jusqu'à la fin de la manche ;
+   * la Vengeuse tant qu'elle choisit sa cible ; Mr. White tant que sa tentative n'est pas jouée.
+   */
+  private seesRoles(viewerId: string): boolean {
+    const r = this.round;
+    if (!r || !this.isInRound() || !r.roles.has(viewerId) || r.alive.has(viewerId)) return false;
+    const special = r.special.get(viewerId);
+    if (special === 'ghost' || special === 'justice') return false;
+    if (r.power?.actorId === viewerId) return false;
+    if (r.resolution?.mrWhite.includes(viewerId)) return false;
+    if (r.mrWhite?.playerId === viewerId && !r.mrWhite.resolved) return false;
+    return true;
+  }
+
   /** Secrets de rôle du seul joueur concerné. */
   private mySpecial(viewerId: string): MySpecial | null {
     const r = this.round;
@@ -1311,6 +1331,7 @@ export class Room {
    */
   viewFor(viewerId: string, now: number): GameView {
     const r = this.round;
+    const seesRoles = this.seesRoles(viewerId);
     const players: PublicPlayer[] = this.players
       .filter((p) => !p.left || (r?.roles.has(p.id) ?? false))
       .map((p) => {
@@ -1325,9 +1346,9 @@ export class Room {
           status: this.statusOf(p.id),
         };
         if (p.photo) view.photo = photoUrl(p.photo);
-        const role = this.publicRole(p.id);
+        const role = seesRoles ? r?.roles.get(p.id) : this.publicRole(p.id);
         if (role) view.role = role;
-        const special = this.publicSpecial(p.id);
+        const special = seesRoles ? r?.special.get(p.id) : this.publicSpecial(p.id);
         if (special) view.special = special;
         return view;
       });
@@ -1416,6 +1437,7 @@ export class Room {
         secret,
         hasSeen: r?.seen.has(viewerId) ?? false,
         special: this.mySpecial(viewerId),
+        seesRoles,
       },
       round,
     };

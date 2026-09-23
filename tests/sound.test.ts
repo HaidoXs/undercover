@@ -1,6 +1,7 @@
 /**
  * Tic-tac du chrono : fenêtre des 10 dernières secondes, accélération sur les 5 dernières,
  * arrêt immédiat, jamais deux tic-tac en même temps, silence quand le son est coupé.
+ * Son des boutons : une fois par activation, jamais sur un bouton désactivé, soumis au même réglage.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,10 +48,33 @@ beforeEach(async () => {
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
     clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
   };
+  docHandlers = {};
+  (globalThis as unknown as { document: unknown }).document = {
+    addEventListener: (type: string, fn: (e: { target: unknown }) => void) => (docHandlers[type] = fn),
+  };
   vi.resetModules();
   sound = await import('../client/src/lib/sound');
   sound.installAudioUnlock();
+  sound.installClickSound();
 });
+
+let docHandlers: Record<string, (e: { target: unknown }) => void>;
+
+/** Élément minimal : un bouton (éventuellement désactivé) ou un élément quelconque hors bouton. */
+function element(kind: 'button' | 'other', opts: { disabled?: boolean; ariaDisabled?: boolean } = {}) {
+  const el = {
+    closest: (sel: string) => (kind === 'button' && sel.includes('button') ? el : null),
+    matches: (sel: string) => sel === ':disabled' && !!opts.disabled,
+    getAttribute: (name: string) => (name === 'aria-disabled' && opts.ariaDisabled ? 'true' : null),
+  };
+  return el;
+}
+
+/** Une activation, puis une pause avant la suivante. */
+function press(target: unknown) {
+  docHandlers.click({ target });
+  vi.advanceTimersByTime(100);
+}
 
 afterEach(() => {
   sound.stopTicking();
@@ -121,5 +145,52 @@ describe('tic-tac', () => {
     vi.resetModules();
     const reloaded = await import('../client/src/lib/sound');
     expect(reloaded.isMuted()).toBe(true);
+  });
+});
+
+describe('son des boutons', () => {
+  it('joue un seul son discret par activation d’un bouton, seulement une fois l’audio débloqué', () => {
+    press(element('button'));
+    expect(clicks).toHaveLength(0);
+    handlers.pointerdown();
+    press(element('button'));
+    expect(clicks).toHaveLength(1);
+    press(element('button'));
+    expect(clicks).toHaveLength(2);
+  });
+
+  it('ignore les boutons désactivés, les éléments qui ne sont pas des boutons et le survol', () => {
+    handlers.pointerdown();
+    press(element('button', { disabled: true }));
+    press(element('button', { ariaDisabled: true }));
+    press(element('other'));
+    expect(clicks).toHaveLength(0);
+    expect(Object.keys(docHandlers)).toEqual(['click']);
+  });
+
+  it('ne double jamais le son d’une même activation', () => {
+    handlers.pointerdown();
+    const button = element('button');
+    docHandlers.click({ target: button });
+    docHandlers.click({ target: button });
+    vi.advanceTimersByTime(1);
+    expect(clicks).toHaveLength(1);
+  });
+
+  it('respecte le son coupé, y compris pour le bouton qui coupe le son', () => {
+    handlers.pointerdown();
+    sound.setMuted(true);
+    press(element('button'));
+    expect(clicks).toHaveLength(0);
+    // Le bouton « Réactiver les sons » : le réglage change pendant le clic, le son suit le nouvel état.
+    docHandlers.click({ target: element('button') });
+    sound.setMuted(false);
+    vi.advanceTimersByTime(1);
+    expect(clicks).toHaveLength(1);
+    vi.advanceTimersByTime(100);
+    docHandlers.click({ target: element('button') });
+    sound.setMuted(true);
+    vi.advanceTimersByTime(1);
+    expect(clicks).toHaveLength(1);
   });
 });

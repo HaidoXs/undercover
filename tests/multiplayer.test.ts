@@ -411,6 +411,45 @@ describe('manche complète et confidentialité', () => {
   });
 });
 
+describe('rôles visibles après élimination, sur le réseau', () => {
+  it('ne transmet les rôles des vivants qu’à l’éliminé, même après un rafraîchissement, puis les oublie à la revanche', async () => {
+    const { h, players, roleOf } = await startedRound(5);
+    await playClues(players);
+    await h.waitFor((v) => v.phase === 'vote');
+    const victim = players.find((p) => p !== h && roleOf(p) === 'civil')!;
+    const alive = players.filter((p) => p !== victim);
+    const uc = players.find((p) => roleOf(p) === 'undercover')!;
+    await voteAll(players, (p) => (p === victim ? h : victim));
+
+    const out = await victim.waitFor((v) => v.phase === 'result' && v.me.seesRoles);
+    for (const p of out.players.filter((x) => x.status === 'alive')) {
+      expect(p.role).toBe(roleOf(players.find((c) => c.id === p.id)!));
+    }
+    await victim.refresh();
+    expect(victim.view.me.seesRoles).toBe(true);
+    expect(victim.view.players.filter((x) => x.status === 'alive').every((x) => x.role !== undefined)).toBe(true);
+
+    // Dans tout ce que les vivants ont reçu : aucun rôle de joueur vivant.
+    for (const p of alive) {
+      await p.waitFor((v) => v.phase !== 'vote');
+      expect(p.views.every((v) => !v.me.seesRoles && v.players.every((x) => x.status !== 'alive' || x.role === undefined))).toBe(true);
+    }
+
+    await h.waitFor((v) => v.phase === 'clues');
+    await playClues(alive);
+    await h.waitFor((v) => v.phase === 'vote');
+    await voteAll(alive, (p) => (p === uc ? alive.find((x) => x !== uc)! : uc));
+    await h.waitFor((v) => v.phase === 'ended');
+    await h.ok('game:replay');
+    await h.waitFor((v) => v.phase === 'lobby');
+    for (const p of players.slice(1)) await p.ok('lobby:ready', { ready: true });
+    await h.ok('game:start');
+    const fresh = await victim.waitFor((v) => v.phase === 'reveal');
+    expect(fresh.me.seesRoles).toBe(false);
+    expect(fresh.players.every((x) => x.role === undefined)).toBe(true);
+  });
+});
+
 describe('rôles spéciaux sur le réseau', () => {
   it('ne transmet les liens, rôles et effets secrets qu’à leurs destinataires', async () => {
     const { h, players, room } = await startedRound(9, {

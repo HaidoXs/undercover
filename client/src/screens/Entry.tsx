@@ -33,6 +33,7 @@ import { session, type ProfilePhoto } from '../net/session';
 import { PhotoPicker } from '../components/PhotoPicker';
 import { AccountButton, HomeAccountCard, ThemeToggle } from '../components/Account';
 import { useApp, type Fatal } from '../state/store';
+import { SoundToggle } from './Room';
 
 // ───────────────────────── accueil
 
@@ -41,6 +42,7 @@ export function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () =>
   return (
     <div className="home">
       <div className="home-top">
+        <SoundToggle />
         <ThemeToggle />
         <AccountButton />
       </div>

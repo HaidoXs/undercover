@@ -24,7 +24,7 @@ export function MyRolePanel({ view }: { view: GameView }) {
   if (!special) return null;
   const lines: string[] = [];
   if (special.role === 'lovers') lines.push(`Ton âme sœur : ${nameOf(pmap, special.partnerId)}. Vous gagnez seuls si vous êtes les deux derniers en vie.`);
-  if (special.role === 'duelists') lines.push(`Ton adversaire : ${nameOf(pmap, special.partnerId)}. Le premier éliminé perd le duel.`);
+  if (special.role === 'duelists') lines.push(`Ton adversaire : ${nameOf(pmap, special.partnerId)}. Tu ne gagnes qu’en votant contre lui au scrutin qui l’élimine, jamais avec ton camp.`);
   if (special.role === 'justice') lines.push('Ton identité est publique : tu tranches les égalités.');
   if (special.role === 'falafel' && special.falafelTargetId) lines.push(`Falafel offert à ${nameOf(pmap, special.falafelTargetId)}. Son effet reste secret.`);
   if (special.role && !['lovers', 'duelists', 'justice', 'falafel'].includes(special.role)) lines.push(specialRole(special.role).tagline);
@@ -278,16 +278,16 @@ export function EventList({ view, events }: { view: GameView; events: Resolution
               <li key={i}>
                 <Swords size={18} />
                 <span>
-                  Duel remporté par {n(e.winnerId)} face à {n(e.loserId)} !
+                  Duel remporté par {n(e.winnerId)}, dont le vote a éliminé {n(e.loserId)} !
                 </span>
               </li>
             );
-          case 'duel-draw':
+          case 'duel-void':
             return (
               <li key={i}>
                 <Swords size={18} />
                 <span>
-                  Duel nul : {n(e.playerIds[0])} et {n(e.playerIds[1])} sont tombés ensemble.
+                  Duel sans vainqueur entre {n(e.playerIds[0])} et {n(e.playerIds[1])} : aucun des deux n’a éliminé l’autre par son vote.
                 </span>
               </li>
             );

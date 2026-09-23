@@ -15,7 +15,6 @@ import {
   Wind,
   type LucideIcon,
 } from 'lucide-react';
-import { specialRole } from '../../../../shared/specialRoles';
 import type { GameView, PublicPlayer, RoundView } from '../../../../shared/types';
 import { Avatar } from '../../components/Avatar';
 import { RoleChip } from '../../components/Chrome';
@@ -65,7 +64,7 @@ export function GameScreen({ view, onLeft }: { view: GameView; onLeft: () => voi
   const phaseKey = `${view.phase}-${round.id}-${round.cycle}-${round.ballot?.id ?? ''}-${round.result?.ballotId ?? ''}`;
 
   return (
-    <div className="shell wide">
+    <div className={cls('shell wide', view.phase === 'clues' && 'shell-clues')}>
       <TopBar view={view} onLeft={onLeft}>
         <div className="phase-head grow" style={{ minWidth: 0 }}>
           <span className={cls('phase-badge', meta.tone && `tone-${meta.tone}`)} aria-hidden="true">
@@ -82,7 +81,8 @@ export function GameScreen({ view, onLeft }: { view: GameView; onLeft: () => voi
         Phase : {meta.title}.
       </p>
 
-      <div className="game-grid">
+      {/* Pendant les indices, le tableau des joueurs et des indices prend la colonne large. */}
+      <div className={cls('game-grid', view.phase === 'clues' && 'is-clues')}>
         <div className="stack">
           <StatusBanner view={view} />
           <TurnBanner view={view} meta={meta} />
@@ -97,9 +97,8 @@ export function GameScreen({ view, onLeft }: { view: GameView; onLeft: () => voi
           </div>
         </div>
         {view.phase !== 'ended' && (
-          <aside className="stack sticky-side" aria-label="Joueurs et indices">
-            <PlayersPanel view={view} />
-            <ClueLog view={view} />
+          <aside className={cls('stack', view.phase !== 'clues' && 'sticky-side')} aria-label="Joueurs et indices">
+            <PlayersBoard view={view} />
           </aside>
         )}
       </div>
@@ -229,22 +228,35 @@ function StatusBanner({ view }: { view: GameView }) {
   if (view.me.status === 'eliminated' && view.phase !== 'ended' && !lastChance && !deciding) {
     return (
       <div className="notice notice-muted" role="status">
-        <UserX size={18} />
-        <span>Tu as été éliminé : tu peux suivre la fin de la manche, sans voter ni donner d’indice.</span>
+        {view.me.seesRoles ? <Eye size={18} /> : <UserX size={18} />}
+        <span>
+          {view.me.seesRoles
+            ? 'Tu as été éliminé : tu vois maintenant le rôle de chaque joueur encore en jeu. Garde-le pour toi jusqu’à la fin de la manche !'
+            : 'Tu as été éliminé : tu peux suivre la fin de la manche, sans voter ni donner d’indice.'}
+        </span>
       </div>
     );
   }
   return null;
 }
 
-// ───────────────────────── panneau des joueurs
+// ───────────────────────── joueurs et indices
 
-function PlayersPanel({ view }: { view: GameView }) {
+/**
+ * Vue d'ensemble de la manche : chaque joueur avec tous ses indices, dans l'ordre de passage du tour,
+ * les éliminés à la suite. Aucune zone défilante ni volet replié : tout reste affiché.
+ */
+function PlayersBoard({ view }: { view: GameView }) {
   const round = view.round as RoundView;
+  const duringClues = view.phase === 'clues';
   const current = round.turn?.playerId;
   const voted = new Set(round.ballot?.voted ?? []);
-  const participants = view.players.filter((p) => p.status === 'alive' || p.status === 'eliminated');
+  const rank = new Map(round.order.map((id, i) => [id, i]));
+  const participants = view.players
+    .filter((p) => p.status === 'alive' || p.status === 'eliminated')
+    .sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
   const waiting = view.players.filter((p) => p.status === 'waiting');
+  const doneNow = round.clues.filter((c) => c.cycle === round.cycle).length;
 
   const badgeFor = (p: PublicPlayer) => {
     if (p.status === 'eliminated') return 'out' as const;
@@ -254,126 +266,102 @@ function PlayersPanel({ view }: { view: GameView }) {
     return null;
   };
 
-  const describe = (p: PublicPlayer) => {
-    const parts = [p.name];
-    if (p.id === view.me.id) parts.push('toi');
-    if (p.isHost) parts.push('hôte');
-    if (p.status === 'eliminated') parts.push('éliminé');
-    if (!p.connected) parts.push('hors ligne');
-    if (p.id === current) parts.push('joue en ce moment');
-    if (p.special) parts.push(`rôle spécial public : ${specialRole(p.special).name}`);
-    if (round.memeId === p.id) parts.push('doit mimer son indice');
-    if (round.ghostId === p.id) parts.push('vote encore');
-    if (view.phase === 'vote' && voted.has(p.id)) parts.push('a voté');
-    return parts.join(', ');
-  };
-
   return (
-    <section className="card card-tight" aria-labelledby="panel-players">
+    <section className="card card-tight board" aria-labelledby="board-title">
       <div className="card-header" style={{ marginBottom: 8 }}>
-        <h2 id="panel-players" className="card-title">
-          <Users size={18} /> Joueurs
+        <h2 id="board-title" className="card-title">
+          <Users size={18} /> Joueurs et indices
         </h2>
-        <span className="pill">{participants.filter((p) => p.status === 'alive').length} en jeu</span>
+        <span className="pill">
+          {duringClues ? `Tour ${round.cycle} · ${doneNow}/${round.order.length}` : `${participants.filter((p) => p.status === 'alive').length} en jeu`}
+        </span>
       </div>
-      <ul className="rail" style={{ listStyle: 'none', margin: 0 }}>
-        {participants.map((p) => (
-          <li
-            key={p.id}
-            className={cls('rail-item', p.id === current && 'is-current', p.status === 'eliminated' && 'is-out')}
-            aria-label={describe(p)}
-          >
-            <Avatar
-              avatar={p.avatar} photo={p?.photo}
-              size={44}
-              dimmed={p.status === 'eliminated' || !p.connected}
-              ring={p.id === current ? 'active' : undefined}
-              badge={badgeFor(p)}
-              label=""
-            />
-            <span className="n" aria-hidden="true">
-              {p.name}
-              {p.id === view.me.id && ' (toi)'}
-            </span>
-            {(p.special || round.memeId === p.id || round.ghostId === p.id) && (
-              <span className="rail-chips" aria-hidden="true">
+      <ol className="board-grid">
+        {participants.map((p) => {
+          const out = p.status === 'eliminated';
+          const isCurrent = p.id === current;
+          const mine = p.id === view.me.id;
+          const clues = round.clues.filter((c) => c.playerId === p.id);
+          const pending = isCurrent && !clues.some((c) => c.cycle === round.cycle);
+          const place = duringClues && !out ? rank.get(p.id) : undefined;
+          return (
+            <li key={p.id} className={cls('board-cell', isCurrent && 'is-current', mine && 'is-mine', out && 'is-out')} aria-current={isCurrent ? 'step' : undefined}>
+              <div className="bc-head">
+                {place !== undefined && (
+                  <span className="bc-num">
+                    <span className="sr-only">Passage n°</span>
+                    {place + 1}
+                  </span>
+                )}
+                <Avatar avatar={p.avatar} photo={p.photo} size={32} dimmed={out || !p.connected} ring={isCurrent ? 'active' : undefined} badge={badgeFor(p)} label="" />
+                <span className="bc-name">
+                  {p.name}
+                  {mine && <span className="bc-me"> (toi)</span>}
+                </span>
+              </div>
+              <div className="bc-tags">
+                {isCurrent && <span className="bc-tag is-turn">{mine ? 'Ton tour' : 'Son tour'}</span>}
+                {out && <span className="bc-tag is-out">Éliminé</span>}
+                {!p.connected && !out && <span className="bc-tag">Hors ligne</span>}
+                {view.phase === 'vote' && voted.has(p.id) && <span className="bc-tag">A voté</span>}
+                {p.role && <RoleChip role={p.role} />}
                 {p.special && <SpecialChip id={p.special} />}
                 {round.memeId === p.id && (
                   <span className="special-chip amber">
-                    <Drama size={12} /> Mime
+                    <Drama size={12} aria-hidden="true" /> Mime
                   </span>
                 )}
                 {round.ghostId === p.id && <GhostBadge />}
-              </span>
-            )}
-            {p.role && (
-              <span className="rail-extra" aria-hidden="true">
-                <RoleChip role={p.role} />
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
+              </div>
+              {(clues.length > 0 || pending) && (
+                <ul className="bc-clues" aria-label={`Indices de ${p.name}`}>
+                  {clues.map((c, i) => (
+                    <li key={i} className={cls('bc-clue', c.cycle === round.cycle && 'is-now')}>
+                      <span className="bc-cycle">
+                        <span className="sr-only">Tour </span>T{c.cycle}
+                      </span>
+                      {c.mimed ? (
+                        <span className="cc-mime">
+                          <Drama size={14} aria-hidden="true" /> Mimé
+                        </span>
+                      ) : c.text === null ? (
+                        <span className="bc-passed">Passé</span>
+                      ) : (
+                        <span className="bc-text">{c.text}</span>
+                      )}
+                    </li>
+                  ))}
+                  {pending && (
+                    <li className="bc-clue is-now">
+                      <span className="bc-cycle">
+                        <span className="sr-only">Tour </span>T{round.cycle}
+                      </span>
+                      {round.memeId === p.id ? (
+                        <span className="cc-mime">
+                          <Drama size={14} aria-hidden="true" /> Mime en cours
+                        </span>
+                      ) : (
+                        <span className="bc-thinking">
+                          <span className="typing" aria-hidden="true">
+                            <i />
+                            <i />
+                            <i />
+                          </span>
+                          <span className="sr-only">réfléchit</span>
+                        </span>
+                      )}
+                    </li>
+                  )}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ol>
       {waiting.length > 0 && (
         <p className="subtle" style={{ marginTop: 8 }}>
           En attente de la prochaine manche : {waiting.map((p) => p.name).join(', ')}
         </p>
-      )}
-    </section>
-  );
-}
-
-// ───────────────────────── historique des indices
-
-export function ClueLog({ view, compact }: { view: GameView; compact?: boolean }) {
-  const round = view.round as RoundView;
-  const pmap = playersById(view);
-  // Pendant les indices, le tour en cours est déjà présenté en cartes horizontales : on n'affiche ici que les tours précédents.
-  const duringClues = view.phase === 'clues';
-  const cycles = [...new Set(round.clues.map((c) => c.cycle))]
-    .filter((cycle) => !duringClues || cycle !== round.cycle)
-    .sort((a, b) => b - a);
-  if (duringClues && cycles.length === 0) return null;
-
-  return (
-    <section className="card card-tight" aria-labelledby="panel-clues">
-      <div className="card-header" style={{ marginBottom: 10 }}>
-        <h2 id="panel-clues" className="card-title">
-          <MessageSquareQuote size={18} /> {duringClues ? 'Tours précédents' : 'Historique des indices'}
-        </h2>
-      </div>
-      {cycles.length === 0 ? (
-        <p className="subtle">Aucun indice pour l’instant. Le premier joueur réfléchit…</p>
-      ) : (
-        <div className="clue-log">
-          {cycles.slice(0, compact ? 1 : undefined).map((cycle) => (
-            <div key={cycle}>
-              <p className="clue-cycle-title">Tour d’indices {cycle}</p>
-              {round.clues
-                .filter((c) => c.cycle === cycle)
-                .map((c, i) => {
-                  const p = pmap.get(c.playerId);
-                  return (
-                    <div className="clue" key={`${cycle}-${i}`}>
-                      <Avatar avatar={p?.avatar ?? 0} photo={p?.photo} size={34} label="" dimmed={p?.status === 'eliminated'} />
-                      <div className="clue-body">
-                        <p className="clue-author">{p?.name ?? 'Joueur parti'}</p>
-                        {c.mimed ? (
-                          <p className="clue-text cc-mime">
-                            <Drama size={15} aria-hidden="true" /> Mimé
-                          </p>
-                        ) : c.text === null ? (
-                          <p className="clue-text is-passed">Passé</p>
-                        ) : (
-                          <p className="clue-text">« {c.text} »</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          ))}
-        </div>
       )}
     </section>
   );

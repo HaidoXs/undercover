@@ -321,29 +321,10 @@
   gap: 4px;
 }
 
-/* Liste des joueurs sur mobile : colonnes étroites, pastilles réduites à leur icône. */
-@media (max-width: 959.98px) {
-  .rail-item .rail-chips {
-    max-width: 100%;
-  }
-  .rail-item .chip-label {
-    display: none;
-  }
-  .rail-item .special-chip:has(.chip-label) {
-    width: 26px;
-    padding: 0;
-    justify-content: center;
-  }
-}
-
 @media (min-width: 960px) {
   .rail-chips {
     margin-left: auto;
     justify-content: flex-end;
-  }
-  /* Le nom reste lisible : ce sont les pastilles qui passent à la ligne. */
-  .rail-item .n {
-    min-width: 4.5em;
   }
 }
 
@@ -405,16 +386,7 @@
   }
 }
 
-/* Carte d'indice mimée (Mr. Meme) */
-.clue-card.is-meme {
-  background: var(--yellow-soft);
-  border-style: dashed;
-}
-
-.clue-card.is-meme.is-current {
-  border-style: solid;
-}
-
+/* Indice mimé (Mr. Meme) */
 .cc-mime {
   display: inline-flex;
   align-items: center;

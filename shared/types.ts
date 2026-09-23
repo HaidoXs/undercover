@@ -54,7 +54,7 @@ export interface PublicPlayer {
   ready: boolean;
   left: boolean;
   status: PlayerStatus;
-  /** Présent uniquement après révélation autorisée (élimination ou fin de manche). */
+  /** Présent uniquement après révélation autorisée (élimination, fin de manche, ou vue d'un éliminé qui n'agit plus). */
   role?: Role;
   /** Rôle spécial public : la Justice dès le début, les autres après élimination ou en fin de manche. */
   special?: SpecialRoleId;
@@ -104,7 +104,8 @@ export type ResolutionEvent =
   | { type: 'eliminated'; playerId: string; role: Role; special?: SpecialRoleId; cause: EliminationCause }
   | { type: 'avenger-pass'; playerId: string }
   | { type: 'duel'; winnerId: string; loserId: string }
-  | { type: 'duel-draw'; playerIds: [string, string] };
+  /** Un Duelliste est tombé sans que son adversaire l'élimine par son vote : personne ne gagne le duel. */
+  | { type: 'duel-void'; playerIds: [string, string] };
 
 export interface ResultView {
   ballotId: string;
@@ -147,7 +148,8 @@ export interface EndView {
   /** Univers précis de la manche, s'il y en avait un. */
   themeName: string | null;
   lovers: [string, string] | null;
-  duel: { playerIds: [string, string]; winnerId: string | null; draw: boolean } | null;
+  /** winnerId : seul Duelliste gagnant de la manche, s'il a éliminé son adversaire par son vote. */
+  duel: { playerIds: [string, string]; winnerId: string | null } | null;
   falafel: { vendorId: string; targetId: string; effect: 'protect' | 'sabotage'; used: boolean } | null;
 }
 
@@ -220,6 +222,8 @@ export interface GameView {
     secret: Secret | null;
     hasSeen: boolean;
     special: MySpecial | null;
+    /** Éliminé sans influence sur la suite : les rôles des joueurs en vie lui sont transmis (à lui seul). */
+    seesRoles: boolean;
   };
   round: RoundView | null;
 }
