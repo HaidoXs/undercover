@@ -4555,3 +4555,14 @@ dialog.sheet::backdrop {
   background: var(--paper-2);
   font-weight: 650;
 }
+
+.home-legal {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.home-legal a {
+  color: var(--ink-3);
+  font-weight: 700;
+}

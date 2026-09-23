@@ -120,6 +120,9 @@ export function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () =>
           <button type="button" className="btn btn-quiet btn-sm" onClick={() => setHelp(true)}>
             <CircleHelp size={16} /> Comment jouer ?
           </button>
+          <span className="home-legal">
+            <a href="/confidentialite.html">Confidentialité</a> · <a href="/conditions.html">Conditions</a>
+          </span>
         </footer>
       </div>
       <Sheet open={help} onClose={() => setHelp(false)} title="Comment jouer" icon={<CircleHelp size={20} />}>
