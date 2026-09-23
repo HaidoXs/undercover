@@ -115,7 +115,7 @@ export function SecretPeek({ secret, extra }: { secret: Secret; extra?: ReactNod
   }, [shown, hide]);
 
   return (
-    <div className="stack-sm">
+    <div className="stack-sm peek-host">
       <div className="peek">
         <span className="peek-icon" aria-hidden="true">
           {secret.kind === 'mrwhite' ? <GhostArt size={30} /> : <MaskArt size={36} />}

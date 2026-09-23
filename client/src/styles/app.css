@@ -2687,6 +2687,27 @@ details.collapsible[open] > summary {
   color: var(--ink-2);
 }
 
+/* La mise en page suit la largeur réelle de l'encart (colonne étroite des indices, téléphone). */
+.peek-host {
+  container-type: inline-size;
+}
+
+@container (max-width: 420px) {
+  .peek {
+    flex-wrap: wrap;
+  }
+  .peek > .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+@container (max-width: 300px) {
+  .peek-icon {
+    display: none;
+  }
+}
+
 .peek-hidden {
   display: inline-flex;
   gap: 5px;
