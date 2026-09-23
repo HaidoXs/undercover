@@ -11,15 +11,26 @@ import {
   VOTE_SECONDS_OPTIONS,
 } from '../../shared/constants';
 import { compositionError, compositionFor } from '../../shared/rules';
+import {
+  isSpecialRoleId,
+  orderSpecialRoles,
+  POWER_SECONDS,
+  specialRole,
+  specialRolesError,
+  type SpecialRoleId,
+} from '../../shared/specialRoles';
 import type {
   ClueEntry,
+  EliminationCause,
   EliminationEntry,
   EndView,
   GameView,
   MrWhiteView,
+  MySpecial,
   Phase,
   PlayerStatus,
   PublicPlayer,
+  ResolutionEvent,
   ResultView,
   Role,
   RoundView,
@@ -40,6 +51,8 @@ export interface Timings {
   tieNotice: number;
   mrWhiteGuess: number;
   mrWhiteResult: number;
+  /** Décision de la Déesse de la Justice ou de la Vengeuse. */
+  power: number;
   /** Au-delà, un joueur déconnecté est considéré absent : son tour passe, son vote devient abstention. */
   disconnectGrace: number;
   hostTransfer: number;
@@ -54,6 +67,7 @@ export const DEFAULT_TIMINGS: Timings = {
   tieNotice: 5_000,
   mrWhiteGuess: 45_000,
   mrWhiteResult: 5_000,
+  power: POWER_SECONDS * 1000,
   disconnectGrace: 10_000,
   hostTransfer: 60_000,
   roomExpiry: 30 * 60_000,
@@ -87,6 +101,7 @@ export function defaultSettings(): Settings {
     packIds: PACKS.map((p) => p.id),
     clueSeconds: 45,
     voteSeconds: 60,
+    specialRoles: [],
   };
 }
 
@@ -108,11 +123,42 @@ interface Ballot {
   candidates: string[];
   voters: string[];
   votes: Map<string, string>;
+  /** Votants privés de vote par un falafel piégé. */
+  blocked: Set<string>;
 }
 
 interface Victory {
   side: WinnerSide;
   winners: string[];
+  reason: string;
+}
+
+type ResultBase = Omit<ResultView, 'outcome' | 'events'>;
+
+/** Résolution d'un scrutin : éliminations en chaîne, pouvoirs, tentatives de Mr. White. */
+interface Resolution {
+  base: ResultBase;
+  primary: string | null;
+  queue: { playerId: string; cause: EliminationCause }[];
+  events: ResolutionEvent[];
+  dead: string[];
+  mrWhite: string[];
+}
+
+interface PendingPower {
+  id: string;
+  kind: 'justice' | 'avenger';
+  actorId: string;
+  candidates: string[];
+}
+
+interface Falafel {
+  vendorId: string;
+  targetId: string | null;
+  effect: 'protect' | 'sabotage';
+  used: boolean;
+  /** Tour de vote bloqué par le sabotage (fixé au premier vote après le don). */
+  sabotageCycle: number | null;
 }
 
 interface Round {
@@ -131,14 +177,35 @@ interface Round {
   seen: Set<string>;
   ballot: Ballot | null;
   result: ResultView | null;
-  next: 'runoff' | 'cycle' | 'mrwhite' | 'check' | null;
+  next: 'runoff' | 'cycle' | 'resolved' | null;
   runoffCandidates: string[];
   mrWhite: MrWhiteView | null;
   end: EndView | null;
   composition: { civils: number; undercovers: number; mrWhite: number };
+  // Rôles spéciaux
+  special: Map<string, SpecialRoleId>;
+  memeEnabled: boolean;
+  memeId: string | null;
+  memeUsed: Set<string>;
+  lovers: [string, string] | null;
+  duel: { a: string; b: string; winnerId: string | null; draw: boolean; done: boolean } | null;
+  falafel: Falafel | null;
+  boomerangUsed: boolean;
+  avengerUsed: boolean;
+  resolution: Resolution | null;
+  power: PendingPower | null;
 }
 
-const IN_ROUND: readonly Phase[] = ['reveal', 'clues', 'vote', 'result', 'mrwhite'];
+const IN_ROUND: readonly Phase[] = ['reveal', 'clues', 'vote', 'power', 'result', 'mrwhite'];
+
+const REASONS: Record<WinnerSide, string> = {
+  civils: 'Tous les intrus ont été démasqués.',
+  intrus: 'Les intrus encore en jeu sont aussi nombreux que les Civils restants.',
+  mrwhite: 'Mr. White a deviné le mot des Civils.',
+  lovers: 'Les Amoureux sont les deux derniers joueurs en vie.',
+  joyfool: 'Le Fou de joie a été éliminé par le vote dès le premier tour.',
+  draw: 'Personne n’a survécu : la manche est nulle.',
+};
 
 export class Room {
   version = 0;
@@ -254,6 +321,14 @@ export class Room {
     return 0;
   }
 
+  /** Joueur portant ce rôle spécial dans la manche en cours (vivant ou non). */
+  private holderOf(role: SpecialRoleId): string | null {
+    const r = this.round;
+    if (!r) return null;
+    for (const [id, s] of r.special) if (s === role) return id;
+    return null;
+  }
+
   // ───────────────────────── membres & connexions
 
   addPlayer(input: { name: unknown; avatar: unknown; tokenHash: string }, now: number): Player {
@@ -335,7 +410,7 @@ export class Room {
   updateSettings(playerId: string, patch: Record<string, unknown>): void {
     this.requireHost(playerId);
     if (this.phase !== 'lobby') throw new GameError('SETTINGS_LOCKED');
-    const next: Settings = { ...this.settings, packIds: [...this.settings.packIds] };
+    const next: Settings = { ...this.settings, packIds: [...this.settings.packIds], specialRoles: [...this.settings.specialRoles] };
 
     if ('undercoverCount' in patch) {
       const v = patch.undercoverCount;
@@ -358,6 +433,11 @@ export class Room {
     if ('voteSeconds' in patch) {
       if (!(VOTE_SECONDS_OPTIONS as readonly unknown[]).includes(patch.voteSeconds)) throw new GameError('BAD_REQUEST');
       next.voteSeconds = patch.voteSeconds as number;
+    }
+    if ('specialRoles' in patch) {
+      const v = patch.specialRoles;
+      if (!Array.isArray(v) || v.length > 20 || !v.every(isSpecialRoleId)) throw new GameError('BAD_REQUEST');
+      next.specialRoles = orderSpecialRoles(v);
     }
 
     if (JSON.stringify(next) === JSON.stringify(this.settings)) return;
@@ -394,7 +474,7 @@ export class Room {
       throw new GameError('CONFIG_INVALID', `Il faut au moins ${MIN_PLAYERS} joueurs présents pour lancer une manche.`);
     }
     if (this.settings.packIds.length === 0) throw new GameError('NO_PACK');
-    const compoError = compositionError(this.settings, present.length);
+    const compoError = compositionError(this.settings, present.length) ?? specialRolesError(this.settings.specialRoles, present.length);
     if (compoError) throw new GameError('CONFIG_INVALID', compoError);
     const notReady = present.filter((p) => p.id !== this.hostId && !p.ready);
     if (notReady.length > 0) {
@@ -416,6 +496,24 @@ export class Room {
     if (roles.get(baseOrder[0]) === 'mrwhite') {
       const j = 1 + randomInt(baseOrder.length - 1);
       [baseOrder[0], baseOrder[j]] = [baseOrder[j], baseOrder[0]];
+    }
+
+    // Rôles spéciaux : tirés indépendamment des camps, un seul par joueur.
+    // Mr. Meme n'est attribué à personne ici : un joueur sans autre rôle est désigné à chaque tour.
+    const special = new Map<string, SpecialRoleId>();
+    const pool = shuffle(ids);
+    let lovers: [string, string] | null = null;
+    let duel: Round['duel'] = null;
+    let falafel: Falafel | null = null;
+    for (const id of this.settings.specialRoles) {
+      if (id === 'meme') continue;
+      const holders = pool.splice(0, specialRole(id).slots);
+      for (const h of holders) special.set(h, id);
+      if (id === 'lovers') lovers = [holders[0], holders[1]];
+      if (id === 'duelists') duel = { a: holders[0], b: holders[1], winnerId: null, draw: false, done: false };
+      if (id === 'falafel') {
+        falafel = { vendorId: holders[0], targetId: null, effect: randomInt(2) === 0 ? 'protect' : 'sabotage', used: false, sabotageCycle: null };
+      }
     }
 
     this.roundCounter++;
@@ -440,6 +538,17 @@ export class Room {
       mrWhite: null,
       end: null,
       composition,
+      special,
+      memeEnabled: this.settings.specialRoles.includes('meme'),
+      memeId: null,
+      memeUsed: new Set(),
+      lovers,
+      duel,
+      falafel,
+      boomerangUsed: false,
+      avengerUsed: false,
+      resolution: null,
+      power: null,
     };
     for (const p of this.players) p.ready = false;
     this.phase = 'reveal';
@@ -454,10 +563,26 @@ export class Room {
     this.requireMember(playerId);
     if (roundId !== r.id) throw new GameError('STALE_ACTION');
     if (!r.roles.has(playerId)) throw new GameError('NOT_ACTIVE');
+    if (r.falafel?.vendorId === playerId && r.falafel.targetId === null) {
+      throw new GameError('BAD_REQUEST', 'Offre d’abord ton falafel à un joueur.');
+    }
     if (r.seen.has(playerId)) return;
     r.seen.add(playerId);
     this.touch();
     if (this.everyoneSeen(now)) this.enterClues(now, 1);
+  }
+
+  /** Le Vendeur de Falafels choisit son bénéficiaire pendant la découverte des cartes. */
+  giveFalafel(playerId: string, roundId: unknown, targetId: unknown): void {
+    const r = this.requirePhase('reveal');
+    this.requireMember(playerId);
+    if (roundId !== r.id) throw new GameError('STALE_ACTION');
+    const f = r.falafel;
+    if (!f || f.vendorId !== playerId) throw new GameError('NOT_ACTIVE');
+    if (f.targetId !== null) throw new GameError('ALREADY_DONE', 'Ton falafel est déjà offert.');
+    if (typeof targetId !== 'string' || targetId === playerId || !r.roles.has(targetId)) throw new GameError('INVALID_TARGET');
+    f.targetId = targetId;
+    this.touch();
   }
 
   private everyoneSeen(now: number): boolean {
@@ -469,6 +594,11 @@ export class Room {
 
   private enterClues(now: number, cycle: number): void {
     const r = this.round as Round;
+    // Falafel non offert à la fin de la découverte : le serveur choisit un bénéficiaire au hasard.
+    if (r.falafel && r.falafel.targetId === null) {
+      const others = r.baseOrder.filter((id) => id !== r.falafel?.vendorId);
+      r.falafel.targetId = others[randomInt(others.length)];
+    }
     const alive = r.baseOrder.filter((id) => r.alive.has(id));
     const offset = (cycle - 1) % alive.length;
     r.cycle = cycle;
@@ -478,17 +608,36 @@ export class Room {
     r.ballot = null;
     r.result = null;
     r.mrWhite = null;
+    r.resolution = null;
+    r.power = null;
+    // Mr. Meme : un joueur sans autre rôle spécial, jamais deux fois le même.
+    r.memeId = null;
+    if (r.memeEnabled) {
+      const eligible = r.order.filter((id) => !r.special.has(id) && !r.memeUsed.has(id));
+      if (eligible.length > 0) {
+        r.memeId = eligible[randomInt(eligible.length)];
+        r.memeUsed.add(r.memeId);
+      }
+    }
     this.phase = 'clues';
     this.setDeadline(now, this.clueMs());
     this.touch();
   }
 
-  submitClue(playerId: string, turnId: unknown, raw: unknown, now: number): void {
+  private requireCurrentTurn(playerId: string, turnId: unknown): Round {
     const r = this.requirePhase('clues');
     this.requireMember(playerId);
     if (!r.alive.has(playerId)) throw new GameError('NOT_ACTIVE');
     if (turnId !== r.turnId) throw new GameError('STALE_ACTION');
     if (r.order[r.turnIndex] !== playerId) throw new GameError('NOT_YOUR_TURN');
+    return r;
+  }
+
+  submitClue(playerId: string, turnId: unknown, raw: unknown, now: number): void {
+    const r = this.requireCurrentTurn(playerId, turnId);
+    if (r.memeId === playerId) {
+      throw new GameError('BAD_REQUEST', 'Tu es Mr. Meme ce tour-ci : mime ton indice, puis appuie sur « Mime terminé ».');
+    }
     const text = cleanLine(raw, CLUE_MAX);
     if (!text) throw new GameError('TEXT_INVALID', `Ton indice doit faire entre 1 et ${CLUE_MAX} caractères.`);
     const role = r.roles.get(playerId);
@@ -500,9 +649,23 @@ export class Room {
     this.advanceTurn(now);
   }
 
+  /** Mr. Meme : le joueur désigné signale qu'il a fini de mimer son indice. */
+  finishMime(playerId: string, turnId: unknown, now: number): void {
+    const r = this.requireCurrentTurn(playerId, turnId);
+    if (r.memeId !== playerId) throw new GameError('NOT_ACTIVE');
+    r.clues.push({ cycle: r.cycle, playerId, text: null, mimed: true });
+    this.advanceTurn(now);
+  }
+
   private passTurn(now: number): void {
     const r = this.round as Round;
-    r.clues.push({ cycle: r.cycle, playerId: r.order[r.turnIndex], text: null });
+    const playerId = r.order[r.turnIndex];
+    // Le mime se joue en silence devant les autres : encore présent à la fin du temps, il a mimé.
+    if (r.memeId === playerId && !this.isAbsent(playerId, now)) {
+      r.clues.push({ cycle: r.cycle, playerId, text: null, mimed: true });
+    } else {
+      r.clues.push({ cycle: r.cycle, playerId, text: null });
+    }
     this.advanceTurn(now);
   }
 
@@ -520,15 +683,25 @@ export class Room {
 
   // ───────────────────────── vote
 
+  private ghostId(): string | null {
+    const r = this.round as Round;
+    const id = this.holderOf('ghost');
+    return id && !r.alive.has(id) ? id : null;
+  }
+
   private enterVote(now: number, runoff: boolean, candidates: string[]): void {
     const r = this.round as Round;
-    r.ballot = {
-      id: newId(),
-      runoff,
-      candidates: [...candidates],
-      voters: r.baseOrder.filter((id) => r.alive.has(id)),
-      votes: new Map(),
-    };
+    const voters = r.baseOrder.filter((id) => r.alive.has(id));
+    // Le Fantôme éliminé vote encore, sans jamais redevenir une cible.
+    const ghost = this.ghostId();
+    if (ghost && !this.getPlayer(ghost)?.left) voters.push(ghost);
+    const blocked = new Set<string>();
+    const f = r.falafel;
+    if (f && f.effect === 'sabotage' && !f.used && f.targetId && (f.sabotageCycle === null || f.sabotageCycle === r.cycle)) {
+      f.sabotageCycle = r.cycle;
+      if (voters.includes(f.targetId)) blocked.add(f.targetId);
+    }
+    r.ballot = { id: newId(), runoff, candidates: [...candidates], voters, votes: new Map(), blocked };
     r.result = null;
     this.phase = 'vote';
     this.setDeadline(now, this.voteMs());
@@ -541,6 +714,9 @@ export class Room {
     const ballot = r.ballot as Ballot;
     if (ballotId !== ballot.id) throw new GameError('STALE_ACTION');
     if (!ballot.voters.includes(playerId)) throw new GameError('NOT_ACTIVE');
+    if (ballot.blocked.has(playerId)) {
+      throw new GameError('NOT_ACTIVE', 'Ton falafel était piégé : tu ne peux pas voter à ce tour de vote.');
+    }
     if (ballot.votes.has(playerId)) throw new GameError('ALREADY_DONE', 'Ton vote est déjà enregistré : il est définitif.');
     if (targetId === playerId) throw new GameError('SELF_VOTE');
     if (typeof targetId !== 'string' || !ballot.candidates.includes(targetId)) throw new GameError('INVALID_TARGET');
@@ -551,76 +727,253 @@ export class Room {
 
   private ballotComplete(now: number): boolean {
     const ballot = (this.round as Round).ballot as Ballot;
-    return ballot.voters.every((id) => ballot.votes.has(id) || this.isAbsent(id, now));
+    return ballot.voters.every((id) => ballot.votes.has(id) || ballot.blocked.has(id) || this.isAbsent(id, now));
+  }
+
+  /** Premier du scrutin : aucun vote, un désigné, ou des ex æquo. */
+  private evaluate(counts: Map<string, number>): { kind: 'none' } | { kind: 'single'; id: string } | { kind: 'tie'; ids: string[] } {
+    const entries = [...counts].filter(([, n]) => n > 0);
+    if (entries.length === 0) return { kind: 'none' };
+    const top = Math.max(...entries.map(([, n]) => n));
+    const leaders = entries.filter(([, n]) => n === top).map(([id]) => id);
+    return leaders.length === 1 ? { kind: 'single', id: leaders[0] } : { kind: 'tie', ids: leaders };
+  }
+
+  private toTally(counts: Map<string, number>): ResultBase['tally'] {
+    return [...counts].map(([playerId, votes]) => ({ playerId, votes })).sort((a, b) => b.votes - a.votes);
   }
 
   private closeBallot(now: number): void {
     const r = this.round as Round;
     const ballot = r.ballot as Ballot;
-    const counts = new Map<string, number>(ballot.candidates.map((id) => [id, 0]));
+    let counts = new Map<string, number>(ballot.candidates.map((id) => [id, 0]));
     for (const target of ballot.votes.values()) counts.set(target, (counts.get(target) ?? 0) + 1);
-    const tally = ballot.candidates
-      .map((playerId) => ({ playerId, votes: counts.get(playerId) ?? 0 }))
-      .sort((a, b) => b.votes - a.votes);
-    const total = tally.reduce((sum, t) => sum + t.votes, 0);
-    const votes = ballot.voters.map((voterId) => ({ voterId, targetId: ballot.votes.get(voterId) ?? null }));
+    const events: ResolutionEvent[] = [];
+    let pick = this.evaluate(counts);
 
-    let outcome: VoteOutcome;
-    if (total === 0) {
-      outcome = { type: 'no-votes' };
-      r.next = 'cycle';
-    } else {
-      const top = tally[0].votes;
-      const leaders = tally.filter((t) => t.votes === top).map((t) => t.playerId);
-      if (leaders.length === 1) {
-        const eliminated = leaders[0];
-        const role = r.roles.get(eliminated) as Role;
-        r.alive.delete(eliminated);
-        r.eliminations.push({ playerId: eliminated, role, cycle: r.cycle });
-        outcome = { type: 'eliminated', playerId: eliminated, role };
-        r.next = role === 'mrwhite' ? 'mrwhite' : 'check';
-      } else if (!ballot.runoff) {
-        outcome = { type: 'tie', tied: leaders };
-        r.runoffCandidates = leaders;
-        r.next = 'runoff';
-      } else {
-        outcome = { type: 'tie-persist', tied: leaders };
-        r.next = 'cycle';
+    // Boomerang : une seule fois, les votes contre lui se retournent contre leurs auteurs. Recalcul unique.
+    if (pick.kind === 'single' && r.special.get(pick.id) === 'boomerang' && !r.boomerangUsed) {
+      const boomerang = pick.id;
+      r.boomerangUsed = true;
+      events.push({ type: 'boomerang', playerId: boomerang });
+      const reflected = new Map<string, number>(ballot.candidates.map((id) => [id, 0]));
+      for (const [voter, target] of ballot.votes) {
+        const dest = target === boomerang ? voter : target;
+        if (r.alive.has(dest)) reflected.set(dest, (reflected.get(dest) ?? 0) + 1);
       }
+      counts = reflected;
+      pick = this.evaluate(counts);
     }
 
-    r.result = { ballotId: ballot.id, runoff: ballot.runoff, outcome, tally, votes };
+    const base: ResultBase = {
+      ballotId: ballot.id,
+      runoff: ballot.runoff,
+      tally: this.toTally(counts),
+      votes: ballot.voters.map((voterId) => ({ voterId, targetId: ballot.votes.get(voterId) ?? null })),
+    };
     r.ballot = null;
+
+    if (pick.kind === 'none') {
+      this.finishVoting();
+      this.showResult(now, base, { type: 'no-votes' }, events, 'cycle');
+      return;
+    }
+    if (pick.kind === 'tie') {
+      // La Déesse de la Justice remplace le départage habituel, même éliminée.
+      const justice = this.holderOf('justice');
+      if (!ballot.runoff && justice && !this.isAbsent(justice, now)) {
+        r.resolution = { base, primary: null, queue: [], events, dead: [], mrWhite: [] };
+        r.runoffCandidates = pick.ids;
+        this.enterPower(now, 'justice', justice, pick.ids);
+        return;
+      }
+      if (!ballot.runoff) {
+        r.runoffCandidates = pick.ids;
+        this.showResult(now, base, { type: 'tie', tied: pick.ids }, events, 'runoff');
+        return;
+      }
+      this.finishVoting();
+      this.showResult(now, base, { type: 'tie-persist', tied: pick.ids }, events, 'cycle');
+      return;
+    }
+    this.finishVoting();
+    this.designate(now, pick.id, 'vote', base, events);
+  }
+
+  /** Fin d'un tour de vote (second scrutin compris) : le sabotage d'un falafel est consommé. */
+  private finishVoting(): void {
+    const r = this.round as Round;
+    const f = r.falafel;
+    if (f && f.effect === 'sabotage' && !f.used && f.sabotageCycle === r.cycle) f.used = true;
+  }
+
+  /** Joueur désigné par le scrutin (vote ou décision de la Justice). */
+  private designate(now: number, id: string, cause: 'vote' | 'justice', base: ResultBase, events: ResolutionEvent[]): void {
+    const r = this.round as Round;
+    const f = r.falafel;
+    if (f && f.effect === 'protect' && !f.used && f.targetId === id) {
+      f.used = true;
+      events.push({ type: 'protected', playerId: id });
+      this.showResult(now, base, { type: 'protected', playerId: id }, events, 'cycle');
+      return;
+    }
+    const res: Resolution = { base, primary: id, queue: [], events, dead: [], mrWhite: [] };
+    r.resolution = res;
+    // Fou de joie éliminé directement au premier tour : il gagne seul, tout s'arrête.
+    if (r.special.get(id) === 'joyfool' && r.cycle === 1) {
+      this.eliminate(id, cause, res);
+      this.endRound({ side: 'joyfool', winners: [id], reason: REASONS.joyfool });
+      return;
+    }
+    res.queue.push({ playerId: id, cause });
+    this.processResolution(now);
+  }
+
+  private eliminate(id: string, cause: EliminationCause, res: Resolution): void {
+    const r = this.round as Round;
+    const role = r.roles.get(id) as Role;
+    r.alive.delete(id);
+    r.eliminations.push({ playerId: id, role, cycle: r.cycle, cause });
+    const special = r.special.get(id);
+    res.events.push(special ? { type: 'eliminated', playerId: id, role, special, cause } : { type: 'eliminated', playerId: id, role, cause });
+    res.dead.push(id);
+    if (role === 'mrwhite') res.mrWhite.push(id);
+  }
+
+  /** Éliminations en chaîne (Amoureux, Vengeuse), chaque pouvoir au plus une fois. */
+  private processResolution(now: number): void {
+    const r = this.round as Round;
+    const res = r.resolution as Resolution;
+    while (res.queue.length > 0) {
+      const { playerId, cause } = res.queue.shift() as Resolution['queue'][number];
+      if (!r.alive.has(playerId)) continue;
+      this.eliminate(playerId, cause, res);
+      if (r.lovers?.includes(playerId)) {
+        const partner = r.lovers[0] === playerId ? r.lovers[1] : r.lovers[0];
+        if (r.alive.has(partner)) res.queue.push({ playerId: partner, cause: 'lovers' });
+      }
+      if (r.special.get(playerId) === 'avenger' && !r.avengerUsed) {
+        r.avengerUsed = true;
+        const targets = r.baseOrder.filter((id) => r.alive.has(id));
+        if (targets.length > 0) {
+          this.enterPower(now, 'avenger', playerId, targets);
+          return;
+        }
+      }
+    }
+    this.finishResolution(now);
+  }
+
+  private finishResolution(now: number): void {
+    const r = this.round as Round;
+    const res = r.resolution as Resolution;
+    const d = r.duel;
+    if (d && !d.done) {
+      const deadA = res.dead.includes(d.a);
+      const deadB = res.dead.includes(d.b);
+      if (deadA && deadB) {
+        d.done = true;
+        d.draw = true;
+        res.events.push({ type: 'duel-draw', playerIds: [d.a, d.b] });
+      } else if (deadA || deadB) {
+        d.done = true;
+        d.winnerId = deadA ? d.b : d.a;
+        res.events.push({ type: 'duel', winnerId: d.winnerId, loserId: deadA ? d.a : d.b });
+      }
+    }
+    const primary = res.primary;
+    const outcome: VoteOutcome = primary
+      ? { type: 'eliminated', playerId: primary, role: r.roles.get(primary) as Role }
+      : { type: 'no-votes' };
+    this.showResult(now, res.base, outcome, res.events, 'resolved');
+  }
+
+  private showResult(
+    now: number,
+    base: ResultBase,
+    outcome: VoteOutcome,
+    events: ResolutionEvent[],
+    next: 'runoff' | 'cycle' | 'resolved',
+  ): void {
+    const r = this.round as Round;
+    r.result = { ...base, outcome, events: [...events] };
+    r.next = next;
+    r.power = null;
     this.phase = 'result';
-    this.setDeadline(now, (outcome.type === 'tie' ? this.timings.tieNotice : this.timings.result));
+    const extra = Math.min(Math.max(events.length - 1, 0), 4) * Math.round(1500 * this.timeScale);
+    this.setDeadline(now, (outcome.type === 'tie' ? this.timings.tieNotice : this.timings.result) + extra);
     this.touch();
+  }
+
+  // ───────────────────────── pouvoirs : Justice et Vengeuse
+
+  private enterPower(now: number, kind: PendingPower['kind'], actorId: string, candidates: string[]): void {
+    const r = this.round as Round;
+    r.power = { id: newId(), kind, actorId, candidates: [...candidates] };
+    this.phase = 'power';
+    this.setDeadline(now, this.timings.power);
+    this.touch();
+  }
+
+  usePower(playerId: string, powerId: unknown, targetId: unknown, now: number): void {
+    const r = this.requirePhase('power');
+    this.requireMember(playerId);
+    const power = r.power as PendingPower;
+    if (powerId !== power.id) throw new GameError('STALE_ACTION');
+    if (playerId !== power.actorId) throw new GameError('NOT_ACTIVE');
+    if (typeof targetId !== 'string' || !power.candidates.includes(targetId)) throw new GameError('INVALID_TARGET');
+    this.resolvePower(now, targetId);
+  }
+
+  private resolvePower(now: number, targetId: string | null): void {
+    const r = this.round as Round;
+    const power = r.power as PendingPower;
+    const res = r.resolution as Resolution;
+    r.power = null;
+    if (power.kind === 'justice') {
+      if (targetId) {
+        res.events.push({ type: 'justice', actorId: power.actorId, chosenId: targetId });
+        this.finishVoting();
+        this.designate(now, targetId, 'justice', res.base, res.events);
+      } else {
+        // Sans décision : départage habituel (second scrutin entre les ex æquo).
+        res.events.push({ type: 'justice-timeout', actorId: power.actorId });
+        r.resolution = null;
+        this.showResult(now, res.base, { type: 'tie', tied: power.candidates }, res.events, 'runoff');
+      }
+      return;
+    }
+    if (targetId) res.queue.push({ playerId: targetId, cause: 'avenger' });
+    else res.events.push({ type: 'avenger-pass', playerId: power.actorId });
+    this.processResolution(now);
   }
 
   private afterResult(now: number): void {
     const r = this.round as Round;
-    const outcome = r.result?.outcome;
     switch (r.next) {
       case 'runoff':
         this.enterVote(now, true, r.runoffCandidates);
         return;
-      case 'mrwhite':
-        if (outcome?.type === 'eliminated') {
-          this.enterMrWhite(now, outcome.playerId);
-          return;
-        }
-        break;
-      case 'check': {
-        const victory = this.checkVictory();
-        if (victory) {
-          this.endRound(victory);
-          return;
-        }
-        break;
-      }
+      case 'resolved':
+        this.continueAfterResolution(now);
+        return;
       default:
-        break;
+        this.enterClues(now, r.cycle + 1);
     }
-    this.enterClues(now, r.cycle + 1);
+  }
+
+  /** Après une résolution : tentatives de Mr. White, puis Amoureux, victoires classiques, manche nulle. */
+  private continueAfterResolution(now: number): void {
+    const r = this.round as Round;
+    const nextMrWhite = r.resolution?.mrWhite.shift();
+    if (nextMrWhite) {
+      this.enterMrWhite(now, nextMrWhite);
+      return;
+    }
+    r.resolution = null;
+    const victory = this.checkVictory();
+    if (victory) this.endRound(victory);
+    else this.enterClues(now, r.cycle + 1);
   }
 
   // ───────────────────────── Mr. White
@@ -653,46 +1006,58 @@ export class Room {
     attempt.correct = correct;
     if (correct) {
       // Mr. White gagne immédiatement.
-      this.endRound({ side: 'mrwhite', winners: [attempt.playerId] });
+      this.endRound({ side: 'mrwhite', winners: [attempt.playerId], reason: REASONS.mrwhite });
       return;
     }
     this.setDeadline(now, this.timings.mrWhiteResult);
     this.touch();
   }
 
-  private afterMrWhite(now: number): void {
-    const victory = this.checkVictory();
-    if (victory) this.endRound(victory);
-    else this.enterClues(now, (this.round as Round).cycle + 1);
-  }
-
   // ───────────────────────── victoire
 
   private checkVictory(): Victory | null {
     const r = this.round as Round;
-    const aliveIds = [...r.alive];
+    const aliveIds = r.baseOrder.filter((id) => r.alive.has(id));
+    const lovers = r.lovers;
+    // Victoire prioritaire du couple : les deux derniers vivants.
+    if (lovers && aliveIds.length === 2 && aliveIds.includes(lovers[0]) && aliveIds.includes(lovers[1])) {
+      return { side: 'lovers', winners: [...lovers], reason: REASONS.lovers };
+    }
+    if (aliveIds.length === 0) return { side: 'draw', winners: [], reason: REASONS.draw };
     const civils = aliveIds.filter((id) => r.roles.get(id) === 'civil').length;
     const intruders = aliveIds.filter((id) => r.roles.get(id) !== 'civil');
+    // L'objectif des Amoureux remplace celui de leur camp : ils ne gagnent jamais avec lui.
+    const notLover = (id: string) => !lovers?.includes(id);
     if (intruders.length === 0) {
-      return { side: 'civils', winners: r.baseOrder.filter((id) => r.roles.get(id) === 'civil') };
+      return { side: 'civils', winners: r.baseOrder.filter((id) => r.roles.get(id) === 'civil' && notLover(id)), reason: REASONS.civils };
     }
     if (intruders.length >= civils) {
-      return { side: 'intrus', winners: r.baseOrder.filter((id) => intruders.includes(id)) };
+      return { side: 'intrus', winners: intruders.filter(notLover), reason: REASONS.intrus };
     }
     return null;
   }
 
   private endRound(victory: Victory): void {
     const r = this.round as Round;
+    const f = r.falafel;
     r.end = {
       winnerSide: victory.side,
       winners: victory.winners,
+      reason: victory.reason,
       civilWord: r.pair.civil,
       undercoverWord: r.pair.undercover,
       packName: r.pair.packName,
-      roles: r.baseOrder.map((playerId) => ({ playerId, role: r.roles.get(playerId) as Role })),
+      roles: r.baseOrder.map((playerId) => {
+        const special = r.special.get(playerId);
+        const role = r.roles.get(playerId) as Role;
+        return special ? { playerId, role, special } : { playerId, role };
+      }),
       mrWhiteGuess: r.mrWhite?.guess ?? null,
+      lovers: r.lovers ? [...r.lovers] : null,
+      duel: r.duel ? { playerIds: [r.duel.a, r.duel.b], winnerId: r.duel.winnerId, draw: r.duel.draw } : null,
+      falafel: f && f.targetId ? { vendorId: f.vendorId, targetId: f.targetId, effect: f.effect, used: f.used } : null,
     };
+    r.power = null;
     this.phase = 'ended';
     this.deadline = null;
     for (const p of this.players) p.ready = false;
@@ -791,6 +1156,14 @@ export class Room {
           return true;
         }
         return false;
+      case 'power': {
+        const power = r.power as PendingPower;
+        if (due || this.isAbsent(power.actorId, now)) {
+          this.resolvePower(now, null);
+          return true;
+        }
+        return false;
+      }
       case 'result':
         if (due) {
           this.afterResult(now);
@@ -804,7 +1177,7 @@ export class Room {
           return true;
         }
         if (attempt.resolved && due) {
-          this.afterMrWhite(now);
+          this.continueAfterResolution(now);
           return true;
         }
         return false;
@@ -831,9 +1204,38 @@ export class Room {
     return undefined;
   }
 
+  /** Rôle spécial visible par tous : la Justice toujours, les autres après élimination ou en fin de manche. */
+  private publicSpecial(id: string): SpecialRoleId | undefined {
+    const r = this.round;
+    const s = r?.special.get(id);
+    if (!r || !s) return undefined;
+    if (s === 'justice' || this.phase === 'ended' || !r.alive.has(id)) return s;
+    return undefined;
+  }
+
+  /** Secrets de rôle du seul joueur concerné. */
+  private mySpecial(viewerId: string): MySpecial | null {
+    const r = this.round;
+    if (!r || !r.roles.has(viewerId)) return null;
+    const role = r.special.get(viewerId) ?? null;
+    let partnerId: string | null = null;
+    if (role === 'lovers' && r.lovers) partnerId = r.lovers[0] === viewerId ? r.lovers[1] : r.lovers[0];
+    if (role === 'duelists' && r.duel) partnerId = r.duel.a === viewerId ? r.duel.b : r.duel.a;
+    const f = r.falafel;
+    const falafelTargetId = f && f.vendorId === viewerId ? f.targetId : null;
+    let falafel: MySpecial['falafel'] = null;
+    if (f && f.targetId === viewerId && !f.used) {
+      // L'effet reste secret ; le sabotage n'est annoncé qu'au moment où il empêche de voter.
+      const sabotageNow = f.effect === 'sabotage' && f.sabotageCycle === r.cycle && ['vote', 'power', 'result'].includes(this.phase);
+      falafel = sabotageNow ? 'sabotaged' : 'received';
+    }
+    if (!role && !falafel) return null;
+    return { role, partnerId, falafelTargetId, falafel };
+  }
+
   /**
    * Construit l'état envoyé à un joueur précis. Chaque champ est choisi explicitement :
-   * aucun mot, rôle ou vote d'autrui n'y figure avant sa révélation autorisée.
+   * aucun mot, rôle, lien secret ou vote d'autrui n'y figure avant sa révélation autorisée.
    */
   viewFor(viewerId: string, now: number): GameView {
     const r = this.round;
@@ -852,6 +1254,8 @@ export class Room {
         };
         const role = this.publicRole(p.id);
         if (role) view.role = role;
+        const special = this.publicSpecial(p.id);
+        if (special) view.special = special;
         return view;
       });
 
@@ -902,6 +1306,18 @@ export class Room {
         end: this.phase === 'ended' && r.end ? structuredClone(r.end) : null,
         eliminations: r.eliminations.map((e) => ({ ...e })),
         composition: { ...r.composition },
+        memeId: this.phase === 'clues' ? r.memeId : null,
+        power:
+          this.phase === 'power' && r.power
+            ? {
+                id: r.power.id,
+                kind: r.power.kind,
+                actorId: r.power.actorId,
+                candidates: [...r.power.candidates],
+                events: structuredClone(r.resolution?.events ?? []),
+              }
+            : null,
+        ghostId: this.ghostId(),
       };
     }
 
@@ -915,13 +1331,14 @@ export class Room {
       paused: this.paused,
       pausedRemaining: this.pausedRemaining,
       hostId: this.hostId,
-      settings: { ...this.settings, packIds: [...this.settings.packIds] },
+      settings: { ...this.settings, packIds: [...this.settings.packIds], specialRoles: [...this.settings.specialRoles] },
       players,
       me: {
         id: viewerId,
         status: this.statusOf(viewerId),
         secret,
         hasSeen: r?.seen.has(viewerId) ?? false,
+        special: this.mySpecial(viewerId),
       },
       round,
     };

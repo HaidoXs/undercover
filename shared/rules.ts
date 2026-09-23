@@ -1,4 +1,5 @@
 import { MAX_PLAYERS, MIN_PLAYERS, MR_WHITE_MIN_PLAYERS } from './constants';
+import { specialRolesError } from './specialRoles';
 import type { Settings } from './types';
 
 export interface Composition {
@@ -51,5 +52,5 @@ export function compositionError(settings: Settings, players: number): string | 
 
 export function settingsError(settings: Settings, players: number): string | null {
   if (settings.packIds.length === 0) return 'Sélectionne au moins un pack de mots.';
-  return compositionError(settings, players);
+  return compositionError(settings, players) ?? specialRolesError(settings.specialRoles, players);
 }

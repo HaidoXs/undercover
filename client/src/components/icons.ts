@@ -4,6 +4,14 @@ import {
   Bird,
   Cat,
   Clapperboard,
+  Crosshair,
+  Drama,
+  HeartHandshake,
+  PartyPopper,
+  Sandwich,
+  Scale,
+  Undo2,
+  Wind,
   Clover,
   Dog,
   Fish,
@@ -30,6 +38,7 @@ import {
   Volleyball,
   type LucideIcon,
 } from 'lucide-react';
+import type { SpecialRoleId } from '../../../shared/specialRoles';
 import type { Role } from '../../../shared/types';
 
 export const AVATAR_ICONS: Record<string, LucideIcon> = {
@@ -73,4 +82,16 @@ export const ROLE_ICON: Record<Role, LucideIcon> = {
   civil: Users,
   undercover: VenetianMask,
   mrwhite: Ghost,
+};
+
+export const SPECIAL_ICON: Record<SpecialRoleId, LucideIcon> = {
+  justice: Scale,
+  lovers: HeartHandshake,
+  meme: Drama,
+  avenger: Crosshair,
+  duelists: Swords,
+  ghost: Wind,
+  falafel: Sandwich,
+  boomerang: Undo2,
+  joyfool: PartyPopper,
 };

@@ -199,6 +199,15 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
     on('game:vote', (p, now) => {
       manager.act(socket.id, now, (room, id) => room.castVote(id, p.ballotId, p.targetId, now));
     });
+    on('game:mime', (p, now) => {
+      manager.act(socket.id, now, (room, id) => room.finishMime(id, p.turnId, now));
+    });
+    on('game:power', (p, now) => {
+      manager.act(socket.id, now, (room, id) => room.usePower(id, p.powerId, p.targetId, now));
+    });
+    on('game:falafel', (p, now) => {
+      manager.act(socket.id, now, (room, id) => room.giveFalafel(id, p.roundId, p.targetId));
+    });
     on('game:guess', (p, now) => {
       manager.act(socket.id, now, (room, id) => room.submitGuess(id, p.attemptId, p.text, now));
     });

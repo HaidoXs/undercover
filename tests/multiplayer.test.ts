@@ -115,6 +115,9 @@ async function startedRound(n: number, settings: Record<string, unknown> = {}) {
   await h.ok('game:start');
   await Promise.all(players.map((p) => p.waitFor((v) => v.phase === 'reveal')));
   const roundId = h.view.round!.id;
+  // Le Vendeur de Falafels offre d'abord son falafel, comme l'exige l'interface.
+  const vendor = players.find((p) => p.view.me.special?.role === 'falafel');
+  if (vendor) await vendor.ok('game:falafel', { roundId, targetId: players.find((p) => p !== vendor)!.id });
   for (const p of players) await p.ok('game:seen', { roundId });
   await Promise.all(players.map((p) => p.waitFor((v) => v.phase === 'clues')));
   const room = roomOf(h.code);
@@ -401,6 +404,44 @@ describe('manche complète et confidentialité', () => {
     await h.waitFor((v) => v.phase !== 'vote');
     expect((await players[2].emit('game:vote', { ballotId, targetId: h.id })).error?.code).toBe('WRONG_PHASE');
     expect((await h.emit('game:clue', { turnId: turn.turnId, text: 'trop tard' })).error?.code).toMatch(/WRONG_PHASE|STALE_ACTION/);
+  });
+});
+
+describe('rôles spéciaux sur le réseau', () => {
+  it('ne transmet les liens, rôles et effets secrets qu’à leurs destinataires', async () => {
+    const { h, players, room } = await startedRound(9, {
+      specialRoles: ['justice', 'lovers', 'duelists', 'falafel', 'boomerang', 'ghost'],
+    });
+    const r = room.round!;
+    const special = (c: Client) => r.special.get(c.id) ?? null;
+    const lovers = r.lovers!;
+    const duel = [r.duel!.a, r.duel!.b];
+    for (const p of players) {
+      for (const raw of p.received) {
+        const msg = JSON.parse(raw) as { event: string; args: unknown[] };
+        if (msg.event !== 'state') continue;
+        const v = msg.args[0] as GameView;
+        // Rôles d'autrui : seule la Justice est publique.
+        for (const other of v.players) {
+          if (other.id === p.id || !other.special) continue;
+          expect(other.special).toBe('justice');
+        }
+        // Liens secrets : seulement pour les Amoureux et les Duellistes concernés.
+        const partner = v.me.special?.partnerId ?? null;
+        if (v.phase === 'lobby') expect(v.me.special).toBeNull();
+        else if (lovers.includes(p.id)) expect(partner).toBe(lovers.find((id) => id !== p.id));
+        else if (duel.includes(p.id)) expect(partner).toBe(duel.find((id) => id !== p.id));
+        else expect(partner).toBeNull();
+      }
+      const all = p.received.join(' ');
+      // L'effet du falafel n'est jamais transmis avant la fin de la manche.
+      expect(all).not.toContain('"effect"');
+      // Le bénéficiaire ne découvre pas qui lui a offert son falafel.
+      if (r.falafel?.targetId === p.id && special(p) !== 'falafel') {
+        expect(JSON.stringify(p.view.me)).not.toContain(r.falafel.vendorId);
+      }
+    }
+    expect(h.view.settings.specialRoles).toEqual(['justice', 'lovers', 'duelists', 'ghost', 'falafel', 'boomerang']);
   });
 });
 

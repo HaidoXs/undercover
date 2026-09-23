@@ -38,7 +38,7 @@ npm run dev
 ### Tests
 
 ```bash
-npm test          # 59 tests : moteur, packs, sons, parcours multijoueurs réels
+npm test          # 90 tests : moteur, rôles spéciaux, packs, sons, musique, parcours multijoueurs réels
 npm run typecheck # vérification TypeScript de tout le projet
 ```
 
@@ -152,6 +152,29 @@ Un nom de domaine est facultatif (sous-domaine fourni par l'hébergeur).
 - Puis : plus d'intrus → victoire des Civils ; intrus en jeu ≥ Civils restants → victoire des intrus.
 - Fin de manche : les deux mots, tous les rôles et les gagnants sont révélés ; « Rejouer » conserve salon et paramètres.
 
+## Rôles spéciaux (optionnels, tous désactivés par défaut)
+
+L'hôte les active dans le salon (verrouillés pendant la manche). Un seul rôle spécial par joueur, en plus
+de son camp et de son mot ; le lancement est refusé, avec une explication, s'il manque des joueurs ou des places.
+Chaque rôle a une fiche ⓘ (pouvoir, objectif, victoire, restrictions) dans le salon, en jeu et dans l'aide.
+Les textes font foi dans `shared/specialRoles.ts`.
+
+| Rôle | Min. | Résumé |
+| ---- | ---- | ------ |
+| Déesse de la Justice | 3 | Identité publique. Tranche les égalités parmi les ex æquo (15 s), même éliminée ; sinon second scrutin. |
+| Les Amoureux | 5 | Couple formé par le serveur, mort liée. Gagnent seuls s'ils sont les deux derniers en vie. |
+| Mr. Meme | 3 | À chaque tour d'indices, un joueur différent sans autre rôle mime son indice (« Mime terminé »). |
+| La Vengeuse | 5 | Éliminée, emporte un joueur en vie (15 s) ; sans choix, elle renonce. |
+| Les Duellistes | 5 | Le premier des deux éliminé perd le duel, annoncé en fin de manche ; chute simultanée = duel nul. |
+| Le Fantôme | 3 | Éliminé, il discute et vote encore, sans jamais compter comme vivant ni être ciblé. |
+| Le Vendeur de Falafels | 4 | Offre un falafel au début : protection (annule une élimination par scrutin) ou sabotage (prive de vote au prochain scrutin), tiré à 50/50. |
+| Le Boomerang | 3 | Une fois : les votes contre lui reviennent à leurs auteurs, un seul recalcul. |
+| Le Fou de joie | 3 | Gagne seul s'il est éliminé directement par le vote du premier tour (second scrutin compris). |
+
+Ordre de résolution d'un vote, entièrement côté serveur : scrutin → Boomerang → égalités (Justice) →
+protection du falafel → victoire du Fou de joie → éliminations liées et Vengeuse (chaque pouvoir une fois) →
+tentative de chaque Mr. White éliminé → victoire du couple → victoires classiques → manche nulle si personne ne survit.
+
 ## Fiabilité et confidentialité
 
 - Chaque joueur reçoit une **vue construite pour lui** (`Room.viewFor`) : son mot, jamais celui des autres ;
@@ -180,7 +203,7 @@ Un nom de domaine est facultatif (sous-domaine fourni par l'hébergeur).
 ## Structure
 
 ```
-shared/         types, constantes, règles de composition et avatars (communs client/serveur)
+shared/         types, constantes, règles de composition, rôles spéciaux et avatars (communs client/serveur)
 server/
   app.ts        Express + Socket.IO : routes, limitation de débit, validation des messages
   game/Room.ts  machine à états d'une partie + vues par joueur (confidentialité)

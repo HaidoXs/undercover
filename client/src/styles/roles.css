@@ -1,0 +1,369 @@
+/* ─────────────────────────────────────────────────────────────
+   Rôles spéciaux : cartes du salon, fiches ⓘ, rôle privé, pouvoirs, résolution.
+   ───────────────────────────────────────────────────────────── */
+
+.role-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 440px) {
+  .role-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.role-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  transition:
+    border-color 0.22s var(--ease),
+    background-color 0.22s var(--ease);
+}
+
+.role-card.is-on {
+  border-color: rgba(94, 234, 212, 0.5);
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(94, 234, 212, 0.14), transparent 60%),
+    linear-gradient(180deg, rgba(94, 234, 212, 0.06), rgba(94, 234, 212, 0.02));
+}
+
+.role-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.role-icon,
+.role-dot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: rgba(139, 92, 246, 0.16);
+  color: var(--violet-3);
+}
+
+.role-card.is-on .role-icon {
+  background: linear-gradient(135deg, #5eead4, #0d9488);
+  color: #032a27;
+}
+
+.role-name {
+  display: block;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.role-meta {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.role-tagline {
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+
+.role-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+/* Bouton ⓘ : cible tactile confortable (44 px avec la zone de clic étendue). */
+.info-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--violet-3);
+  transition:
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+
+.info-btn::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
+
+.info-btn:hover {
+  background: rgba(139, 92, 246, 0.18);
+  color: #fff;
+}
+
+.role-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.role-sheet-tagline {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 560;
+  color: var(--text);
+}
+
+.role-sheet h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--violet-3);
+}
+
+.role-sheet p,
+.role-sheet li {
+  color: var(--text-2);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.role-sheet ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.roles-overview {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roles-overview li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+
+.roles-overview strong {
+  display: block;
+  color: var(--text);
+}
+
+.roles-overview .subtle {
+  display: block;
+  font-size: 0.84rem;
+}
+
+/* Rôle privé du joueur (carte et rappel) */
+.my-role {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  text-align: left;
+}
+
+.my-role .lbl {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.my-role .val {
+  display: block;
+  font-weight: 800;
+  color: #fff;
+}
+
+.my-role .extra {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--text-2);
+}
+
+.special-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--violet-3);
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  white-space: nowrap;
+}
+
+.special-chip.mint {
+  color: var(--mint-2);
+  background: rgba(94, 234, 212, 0.1);
+  border-color: rgba(94, 234, 212, 0.35);
+}
+
+.special-chip.amber {
+  color: var(--amber-2);
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.rail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* Liste des joueurs sur mobile : colonnes de 64 px, pastilles réduites à leur icône. */
+@media (max-width: 959.98px) {
+  .rail-item .rail-chips {
+    max-width: 100%;
+  }
+  .rail-item .chip-label {
+    display: none;
+  }
+  .rail-item .special-chip:has(.chip-label) {
+    width: 24px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+@media (min-width: 960px) {
+  .rail-chips {
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+  /* Le nom reste lisible : ce sont les pastilles qui passent à la ligne. */
+  .rail-item .n {
+    min-width: 4.5em;
+  }
+}
+
+/* Journal de résolution */
+.events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.events li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  font-size: 0.93rem;
+  color: var(--text-2);
+  animation: rise 0.45s var(--ease) both;
+}
+
+.events li svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--violet-3);
+}
+
+.events li strong {
+  color: var(--text);
+}
+
+.events li:nth-child(2) {
+  animation-delay: 0.25s;
+}
+
+.events li:nth-child(3) {
+  animation-delay: 0.5s;
+}
+
+.events li:nth-child(4) {
+  animation-delay: 0.75s;
+}
+
+.power-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 620px) {
+  .power-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Carte d'indice mimée (Mr. Meme) */
+.clue-card.is-meme {
+  border-color: rgba(251, 191, 36, 0.55);
+}
+
+.cc-mime {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 750;
+  color: var(--amber-2);
+}
+
+.meme-form {
+  border-color: rgba(251, 191, 36, 0.45);
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(251, 191, 36, 0.14), transparent 55%),
+    linear-gradient(180deg, rgba(31, 41, 74, 0.85), rgba(19, 27, 51, 0.9));
+}
+
+.victory.side-lovers {
+  --v: #f9a8d4;
+  --v-soft: rgba(249, 168, 212, 0.2);
+}
+
+.victory.side-joyfool {
+  --v: var(--amber);
+  --v-soft: rgba(251, 191, 36, 0.2);
+}
+
+.victory.side-draw {
+  --v: var(--text-3);
+  --v-soft: rgba(148, 163, 184, 0.15);
+}

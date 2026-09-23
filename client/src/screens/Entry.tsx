@@ -24,6 +24,7 @@ import { Avatar } from '../components/Avatar';
 import { AvatarPicker } from '../components/AvatarPicker';
 import { Brand, FormError, Spinner } from '../components/Chrome';
 import { HelpContent } from '../components/Help';
+import { SPECIAL_ROLES } from '../../../shared/specialRoles';
 import { Sheet } from '../components/Sheet';
 import { cls, submitOnEnter } from '../lib/util';
 import { checkRoom, createRoom, fatalTitle, joinRoom, resumeSaved } from '../net/controller';
@@ -106,7 +107,7 @@ export function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () =>
         </footer>
       </div>
       <Sheet open={help} onClose={() => setHelp(false)} title="Comment jouer" icon={<CircleHelp size={20} />}>
-        <HelpContent />
+        <HelpContent roles={SPECIAL_ROLES.map((r) => r.id)} rolesTitle="Rôles spéciaux (optionnels)" />
       </Sheet>
     </div>
   );

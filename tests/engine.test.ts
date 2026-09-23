@@ -78,7 +78,7 @@ function advance(setup: Setup, ms: number) {
 
 describe('composition', () => {
   it('exige des Civils strictement majoritaires', () => {
-    const base = { undercoverCount: 1, mrWhite: false, packIds: ['animaux'], clueSeconds: 45, voteSeconds: 60 };
+    const base = { undercoverCount: 1, mrWhite: false, packIds: ['animaux'], clueSeconds: 45, voteSeconds: 60, specialRoles: [] };
     expect(compositionError(base, 3)).toBeNull();
     expect(compositionError(base, 2)).toMatch(/au moins 3/);
     expect(compositionError({ ...base, undercoverCount: 2 }, 4)).toMatch(/Trop d'intrus/);

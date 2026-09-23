@@ -1,5 +1,5 @@
 import { Eye, EyeOff, Ghost, VenetianMask } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Secret } from '../../../shared/types';
 import { cls } from '../lib/util';
 
@@ -96,7 +96,8 @@ export function SecretCard({
 }
 
 /** Rappel discret de la carte pendant la manche : masqué par défaut, remasqué automatiquement. */
-export function SecretPeek({ secret }: { secret: Secret }) {
+/** `extra` : informations privées complémentaires (rôle spécial), masquées avec la carte. */
+export function SecretPeek({ secret, extra }: { secret: Secret; extra?: ReactNode }) {
   const [shown, setShown] = useState(false);
   const hide = useCallback(() => setShown(false), []);
   useConcealOnLeave(hide);
@@ -108,7 +109,8 @@ export function SecretPeek({ secret }: { secret: Secret }) {
   }, [shown, hide]);
 
   return (
-    <div className="peek">
+    <div className="stack-sm">
+      <div className="peek">
       <span className="pack-icon" style={{ background: 'rgba(139,92,246,.2)', color: 'var(--violet-3)' }} aria-hidden="true">
         {secret.kind === 'mrwhite' ? <Ghost size={20} /> : <VenetianMask size={20} />}
       </span>
@@ -140,6 +142,8 @@ export function SecretPeek({ secret }: { secret: Secret }) {
         {shown ? <EyeOff size={17} /> : <Eye size={17} />}
         {shown ? 'Masquer' : 'Voir'}
       </button>
+      </div>
+      {shown && extra}
     </div>
   );
 }

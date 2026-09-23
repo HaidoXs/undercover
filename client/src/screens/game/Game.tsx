@@ -1,16 +1,21 @@
 import {
+  Crosshair,
+  Drama,
   Eye,
   Gavel,
   Ghost,
   Hourglass,
   MessageSquareQuote,
+  Scale,
   Trophy,
   UserX,
   Users,
   Vote,
   WifiOff,
+  Wind,
   type LucideIcon,
 } from 'lucide-react';
+import { specialRole } from '../../../../shared/specialRoles';
 import type { GameView, PublicPlayer, RoundView } from '../../../../shared/types';
 import { Avatar } from '../../components/Avatar';
 import { RoleChip } from '../../components/Chrome';
@@ -18,6 +23,7 @@ import { Timer } from '../../components/Timer';
 import { cls, playersById } from '../../lib/util';
 import { TopBar } from '../Room';
 import { CluesPhase, EndPhase, MrWhitePhase, RevealPhase, ResultPhase, VotePhase } from './Phases';
+import { GhostBadge, PowerPhase, SpecialChip } from './Specials';
 
 interface PhaseMeta {
   Icon: LucideIcon;
@@ -35,6 +41,10 @@ function phaseMeta(view: GameView, round: RoundView): PhaseMeta {
       return { Icon: MessageSquareQuote, title: 'Indices', sub: `${manche} · Tour ${round.cycle}`, tone: 'mint' };
     case 'vote':
       return { Icon: Vote, title: round.ballot?.runoff ? 'Second scrutin' : 'Vote', sub: `${manche} · Tour ${round.cycle}` };
+    case 'power':
+      return round.power?.kind === 'avenger'
+        ? { Icon: Crosshair, title: 'Vengeance', sub: `${manche} · Tour ${round.cycle}`, tone: 'amber' }
+        : { Icon: Scale, title: 'Justice', sub: 'Départage des ex æquo', tone: 'amber' };
     case 'result':
       return { Icon: Gavel, title: 'Verdict', sub: `${manche} · Tour ${round.cycle}`, tone: 'amber' };
     case 'mrwhite':
@@ -74,6 +84,7 @@ export function GameScreen({ view, onLeft }: { view: GameView; onLeft: () => voi
             {view.phase === 'reveal' && <RevealPhase view={view} />}
             {view.phase === 'clues' && <CluesPhase view={view} />}
             {view.phase === 'vote' && <VotePhase view={view} />}
+            {view.phase === 'power' && <PowerPhase view={view} />}
             {view.phase === 'result' && <ResultPhase view={view} />}
             {view.phase === 'mrwhite' && <MrWhitePhase view={view} />}
             {view.phase === 'ended' && <EndPhase view={view} />}
@@ -108,7 +119,16 @@ function StatusBanner({ view }: { view: GameView }) {
     );
   }
   const lastChance = view.phase === 'mrwhite' && view.round?.mrWhite?.playerId === view.me.id;
-  if (view.me.status === 'eliminated' && view.phase !== 'ended' && !lastChance) {
+  const deciding = view.phase === 'power' && view.round?.power?.actorId === view.me.id;
+  if (view.me.status === 'eliminated' && view.phase !== 'ended' && view.round?.ghostId === view.me.id && !lastChance && !deciding) {
+    return (
+      <div className="notice notice-mint" role="status">
+        <Wind size={18} />
+        <span>Tu es le Fantôme : éliminé, tu peux encore discuter et voter, sans donner d’indice.</span>
+      </div>
+    );
+  }
+  if (view.me.status === 'eliminated' && view.phase !== 'ended' && !lastChance && !deciding) {
     return (
       <div className="notice notice-muted" role="status">
         <UserX size={18} />
@@ -143,6 +163,9 @@ function PlayersPanel({ view }: { view: GameView }) {
     if (p.status === 'eliminated') parts.push('éliminé');
     if (!p.connected) parts.push('hors ligne');
     if (p.id === current) parts.push('joue en ce moment');
+    if (p.special) parts.push(`rôle spécial public : ${specialRole(p.special).name}`);
+    if (round.memeId === p.id) parts.push('doit mimer son indice');
+    if (round.ghostId === p.id) parts.push('vote encore');
     if (view.phase === 'vote' && voted.has(p.id)) parts.push('a voté');
     return parts.join(', ');
   };
@@ -174,6 +197,17 @@ function PlayersPanel({ view }: { view: GameView }) {
               {p.name}
               {p.id === view.me.id && ' (toi)'}
             </span>
+            {(p.special || round.memeId === p.id || round.ghostId === p.id) && (
+              <span className="rail-chips" aria-hidden="true">
+                {p.special && <SpecialChip id={p.special} />}
+                {round.memeId === p.id && (
+                  <span className="special-chip amber">
+                    <Drama size={12} /> Mime
+                  </span>
+                )}
+                {round.ghostId === p.id && <GhostBadge />}
+              </span>
+            )}
             {p.role && (
               <span className="rail-extra" aria-hidden="true">
                 <RoleChip role={p.role} />
@@ -226,7 +260,11 @@ export function ClueLog({ view, compact }: { view: GameView; compact?: boolean }
                       <Avatar avatar={p?.avatar ?? 0} size={34} label="" dimmed={p?.status === 'eliminated'} />
                       <div className="clue-body">
                         <p className="clue-author">{p?.name ?? 'Joueur parti'}</p>
-                        {c.text === null ? (
+                        {c.mimed ? (
+                          <p className="clue-text cc-mime">
+                            <Drama size={15} aria-hidden="true" /> Mimé
+                          </p>
+                        ) : c.text === null ? (
                           <p className="clue-text is-passed">Passé</p>
                         ) : (
                           <p className="clue-text">« {c.text} »</p>

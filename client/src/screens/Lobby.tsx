@@ -16,6 +16,7 @@ import {
   ScrollText,
   Scale,
   Settings2,
+  Sparkles,
   Timer as TimerIcon,
   Trophy,
   UserPen,
@@ -35,11 +36,13 @@ import {
   VOTE_SECONDS_OPTIONS,
 } from '../../../shared/constants';
 import { compositionFor, maxIntruders, settingsError } from '../../../shared/rules';
+import { SPECIAL_ROLES, specialRolesError, type SpecialRoleId } from '../../../shared/specialRoles';
 import type { GameView, PackMeta, PublicPlayer, Settings } from '../../../shared/types';
 import { Avatar } from '../components/Avatar';
 import { AvatarPicker } from '../components/AvatarPicker';
 import { FormError, Spinner } from '../components/Chrome';
-import { packIcon } from '../components/icons';
+import { packIcon, SPECIAL_ICON } from '../components/icons';
+import { RoleInfoButton } from '../components/RoleInfo';
 import { Sheet } from '../components/Sheet';
 import { cls, copyText, inviteUrl, plural, submitOnEnter } from '../lib/util';
 import { game } from '../net/controller';
@@ -61,6 +64,7 @@ export function Lobby({ view, onLeft }: { view: GameView; onLeft: () => void }) 
         </div>
         <div className="stack">
           <SettingsCard view={view} isHost={isHost} presentCount={present.length} />
+          <SpecialRolesCard view={view} isHost={isHost} presentCount={present.length} />
           <PacksCard view={view} isHost={isHost} />
         </div>
       </div>
@@ -443,6 +447,96 @@ function SettingsCard({ view, isHost, presentCount }: { view: GameView; isHost: 
 }
 
 // ───────────────────────── packs
+
+// ───────────────────────── rôles spéciaux
+
+function SpecialRolesCard({ view, isHost, presentCount }: { view: GameView; isHost: boolean; presentCount: number }) {
+  const [busy, setBusy] = useState(false);
+  const enabled = new Set(view.settings.specialRoles);
+  const slots = SPECIAL_ROLES.filter((r) => enabled.has(r.id)).reduce((sum, r) => sum + r.slots, 0);
+  const issue = enabled.size > 0 ? specialRolesError(view.settings.specialRoles, presentCount) : null;
+
+  const toggle = async (id: SpecialRoleId) => {
+    if (!isHost || busy) return;
+    const next = new Set(enabled);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setBusy(true);
+    const res = await game.settings({ specialRoles: [...next] });
+    setBusy(false);
+    if (!res.ok) toast(res.error.message, 'warn');
+  };
+
+  return (
+    <section className="card enter-3" aria-labelledby="roles-title">
+      <div className="card-header">
+        <div>
+          <h2 id="roles-title" className="card-title">
+            <Sparkles size={20} /> Rôles spéciaux
+          </h2>
+          <p className="subtle" style={{ marginTop: 4 }} aria-live="polite">
+            {enabled.size === 0
+              ? 'Aucun rôle activé : partie classique.'
+              : `${plural(enabled.size, 'rôle activé', 'rôles activés')} · ${plural(slots, 'place', 'places')} pour ${plural(presentCount, 'joueur', 'joueurs')}`}
+          </p>
+        </div>
+        {!isHost && (
+          <span className="pill">
+            <Lock size={13} /> Réglé par l’hôte
+          </span>
+        )}
+      </div>
+      <div className="role-grid">
+        {SPECIAL_ROLES.map((def) => {
+          const Icon = SPECIAL_ICON[def.id];
+          const on = enabled.has(def.id);
+          const labelId = `role-${def.id}`;
+          return (
+            <div key={def.id} className={cls('role-card', on && 'is-on')}>
+              <div className="role-card-top">
+                <span className="role-icon" aria-hidden="true">
+                  <Icon size={20} />
+                </span>
+                <span className="grow">
+                  <span className="role-name" id={labelId}>
+                    {def.name}
+                  </span>
+                  <span className="role-meta">
+                    {def.minPlayers > 3 ? `${def.minPlayers} joueurs min.` : 'Dès 3 joueurs'}
+                    {def.slots > 1 ? ` · ${def.slots} joueurs` : ''}
+                  </span>
+                </span>
+                <RoleInfoButton roleId={def.id} />
+              </div>
+              <p className="role-tagline">{def.tagline}</p>
+              <div className="role-card-foot">
+                <span className={cls('pill', on && 'pill-mint')}>{on ? 'Activé' : 'Désactivé'}</span>
+                <button
+                  type="button"
+                  role="switch"
+                  className="switch"
+                  aria-checked={on}
+                  aria-labelledby={labelId}
+                  disabled={!isHost || busy}
+                  onClick={() => toggle(def.id)}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {issue && (
+        <div className="notice notice-amber" role="status" style={{ marginTop: 12 }}>
+          <Info size={18} />
+          <span>{issue}</span>
+        </div>
+      )}
+      <p className="form-hint" style={{ marginTop: 12 }}>
+        <Lock size={15} /> Un seul rôle spécial par joueur, en plus de son camp et de son mot. Verrouillé pendant la manche.
+      </p>
+    </section>
+  );
+}
 
 function PacksCard({ view, isHost }: { view: GameView; isHost: boolean }) {
   const packs = useApp((s) => s.packs);

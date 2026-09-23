@@ -3,6 +3,12 @@ import {
   CircleCheck,
   CircleX,
   Crosshair,
+  Drama,
+  HeartHandshake,
+  PartyPopper,
+  Sandwich,
+  ShieldCheck,
+  Swords,
   EyeOff,
   Ghost,
   Hourglass,
@@ -28,6 +34,7 @@ import { useCountdown } from '../../hooks/time';
 import { stopTicking, useTickTock } from '../../lib/sound';
 import { cls, playersById, ROLE_LABEL, submitOnEnter } from '../../lib/util';
 import { game, leaveRoom } from '../../net/controller';
+import { EventList, FalafelPicker, MemeForm, MyRolePanel, SpecialChip } from './Specials';
 import { toast } from '../../state/store';
 
 const roundOf = (view: GameView) => view.round as RoundView;
@@ -56,6 +63,7 @@ export function RevealPhase({ view }: { view: GameView }) {
 
   const participants = view.players.filter((p) => p.status === 'alive');
   const seenCount = round.seen.length;
+  const mustGiveFalafel = view.me.special?.role === 'falafel' && !view.me.special.falafelTargetId;
 
   if (!secret) {
     return (
@@ -95,6 +103,8 @@ export function RevealPhase({ view }: { view: GameView }) {
           setEverRevealed(true);
         }}
       />
+      {revealed && <MyRolePanel view={view} />}
+      {revealed && <FalafelPicker view={view} />}
 
       <div className="stack-sm">
         {revealed && (
@@ -111,10 +121,11 @@ export function RevealPhase({ view }: { view: GameView }) {
           </div>
         ) : (
           <>
-            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!everRevealed || busy} onClick={confirm}>
+            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!everRevealed || busy || mustGiveFalafel} onClick={confirm}>
               {busy ? <Spinner /> : <Check size={20} strokeWidth={3} />} J’ai mémorisé
             </button>
             {!everRevealed && <p className="subtle">Retourne d’abord ta carte pour continuer.</p>}
+            {everRevealed && mustGiveFalafel && <p className="subtle">Offre d’abord ton falafel (carte retournée).</p>}
           </>
         )}
         <p className="subtle">
@@ -140,7 +151,15 @@ export function CluesPhase({ view }: { view: GameView }) {
       <div className={cls('expect-line', myTurn && 'is-me')} role="status" aria-live="polite">
         {current && <Avatar avatar={current.avatar} size={36} ring={myTurn ? 'mint' : undefined} label="" />}
         <span className="grow">
-          {myTurn ? 'À toi de jouer : donne ton indice !' : current ? `Au tour de ${current.name}` : 'Tour suivant…'}
+          {myTurn
+            ? round.memeId === view.me.id
+              ? 'À toi de mimer ton indice !'
+              : 'À toi de jouer : donne ton indice !'
+            : current
+              ? round.memeId === current.id
+                ? `Mime en cours : ${current.name}`
+                : `Au tour de ${current.name}`
+              : 'Tour suivant…'}
         </span>
         {!myTurn && (
           <span className="typing" aria-hidden="true">
@@ -151,8 +170,9 @@ export function CluesPhase({ view }: { view: GameView }) {
         )}
       </div>
 
-      {myTurn && round.turn && <ClueForm view={view} turnId={round.turn.turnId} />}
-      {view.me.secret && canPlay(view) && <SecretPeek secret={view.me.secret} />}
+      {myTurn && round.turn && round.memeId !== view.me.id && <ClueForm view={view} turnId={round.turn.turnId} />}
+      {myTurn && round.turn && round.memeId === view.me.id && <MemeForm view={view} turnId={round.turn.turnId} />}
+      {view.me.secret && canPlay(view) && <SecretPeek secret={view.me.secret} extra={<MyRolePanel view={view} />} />}
 
       <section className="card card-tight" aria-labelledby="order-title">
         <div className="card-header" style={{ marginBottom: 10 }}>
@@ -185,7 +205,7 @@ function ClueTrack({
 }: {
   view: GameView;
   currentId: string | undefined;
-  done: Map<string, { text: string | null }>;
+  done: Map<string, { text: string | null; mimed?: boolean }>;
 }) {
   const round = roundOf(view);
   const pmap = playersById(view);
@@ -213,12 +233,22 @@ function ClueTrack({
         const p = pmap.get(id);
         const clue = done.get(id);
         const isCurrent = id === currentId;
-        const state = clue ? (clue.text === null ? 'passé' : `indice : ${clue.text}`) : isCurrent ? 'réfléchit' : 'à venir';
+        const state = clue
+          ? clue.mimed
+            ? 'indice mimé'
+            : clue.text === null
+              ? 'passé'
+              : `indice : ${clue.text}`
+          : isCurrent
+            ? round.memeId === id
+              ? 'mime en cours'
+              : 'réfléchit'
+            : 'à venir';
         return (
           <li
             key={id}
             data-player={id}
-            className={cls('clue-card', isCurrent && 'is-current', !clue && !isCurrent && 'is-upcoming')}
+            className={cls('clue-card', isCurrent && 'is-current', round.memeId === id && 'is-meme', !clue && !isCurrent && 'is-upcoming')}
             aria-current={isCurrent ? 'step' : undefined}
             aria-label={`${i + 1}. ${p?.name ?? 'Joueur'}${id === view.me.id ? ' (toi)' : ''}, ${state}`}
           >
@@ -239,7 +269,11 @@ function ClueTrack({
             </span>
             <span className="cc-body" aria-hidden="true">
               {clue ? (
-                clue.text === null ? (
+                clue.mimed ? (
+                  <span key="mimed" className="cc-mime">
+                    <Drama size={15} aria-hidden="true" /> Mimé
+                  </span>
+                ) : clue.text === null ? (
                   <span key="passed" className="cc-passed">
                     Passé
                   </span>
@@ -248,6 +282,10 @@ function ClueTrack({
                     « {clue.text} »
                   </span>
                 )
+              ) : isCurrent && round.memeId === id ? (
+                <span className="cc-mime">
+                  <Drama size={15} aria-hidden="true" /> Mime en cours
+                </span>
               ) : isCurrent ? (
                 <span className="typing">
                   <i />
@@ -343,7 +381,7 @@ export function VotePhase({ view }: { view: GameView }) {
   const cycleClues = (id: string) =>
     round.clues
       .filter((c) => c.cycle === round.cycle && c.playerId === id)
-      .map((c) => (c.text === null ? 'Passé' : `« ${c.text} »`))
+      .map((c) => (c.mimed ? 'Mimé' : c.text === null ? 'Passé' : `« ${c.text} »`))
       .join(' · ');
   const tiedNames = ballot.candidates.map((id) => pmap.get(id)?.name ?? '?');
 
@@ -370,7 +408,12 @@ export function VotePhase({ view }: { view: GameView }) {
           </p>
         </div>
 
-        {!iAmVoter ? (
+        {view.me.special?.falafel === 'sabotaged' ? (
+          <div className="notice notice-amber" role="status">
+            <Sandwich size={18} />
+            <span>Ton falafel était piégé : tu ne peux pas voter à ce tour de vote (second scrutin compris).</span>
+          </div>
+        ) : !iAmVoter ? (
           <div className="notice notice-muted">
             <Lock size={18} />
             <span>Tu observes ce scrutin : seuls les joueurs encore en jeu votent.</span>
@@ -507,6 +550,17 @@ export function ResultPhase({ view }: { view: GameView }) {
             </p>
           </div>
         )}
+        {outcome.type === 'protected' && (
+          <div className="verdict">
+            <span className="state-icon" aria-hidden="true">
+              <ShieldCheck size={32} />
+            </span>
+            <h2 className="display h2">Falafel protecteur !</h2>
+            <p className="muted">
+              {pmap.get(outcome.playerId)?.name} avait reçu un falafel protecteur : l’élimination est annulée.
+            </p>
+          </div>
+        )}
         {outcome.type === 'no-votes' && (
           <div className="verdict">
             <span className="state-icon" aria-hidden="true">
@@ -514,6 +568,11 @@ export function ResultPhase({ view }: { view: GameView }) {
             </span>
             <h2 className="display h2">Aucun vote exprimé</h2>
             <p className="muted">Personne n’est éliminé. Nouveau tour d’indices !</p>
+          </div>
+        )}
+        {result.events.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <EventList view={view} events={result.events} />
           </div>
         )}
         <div className="stack-sm" style={{ marginTop: 18 }}>
@@ -661,6 +720,9 @@ const VICTORY: Record<string, { title: string; icon: typeof Users }> = {
   civils: { title: 'Victoire des Civils', icon: Users },
   intrus: { title: 'Victoire des intrus', icon: VenetianMask },
   mrwhite: { title: 'Mr. White l’emporte !', icon: Ghost },
+  lovers: { title: 'Victoire des Amoureux', icon: HeartHandshake },
+  joyfool: { title: 'Le Fou de joie l’emporte !', icon: PartyPopper },
+  draw: { title: 'Manche nulle', icon: Swords },
 };
 
 export function EndPhase({ view }: { view: GameView }) {
@@ -682,11 +744,16 @@ export function EndPhase({ view }: { view: GameView }) {
     if (!res.ok) toast(res.error.message, 'warn');
   };
 
-  const personal = myRole
-    ? iWon
-      ? `Bravo, tu gagnes en tant que ${ROLE_LABEL[myRole]} !`
-      : `Perdu cette fois : tu étais ${ROLE_LABEL[myRole]}.`
-    : 'Tu joueras la prochaine manche.';
+  const myLover = end.lovers?.includes(view.me.id) ?? false;
+  const personal = !myRole
+    ? 'Tu joueras la prochaine manche.'
+    : end.winnerSide === 'draw'
+      ? 'Personne ne gagne cette fois.'
+      : iWon
+        ? `Bravo, tu gagnes ${end.winnerSide === 'lovers' ? 'avec ton âme sœur' : end.winnerSide === 'joyfool' ? 'en Fou de joie' : `en tant que ${ROLE_LABEL[myRole]}`} !`
+        : myLover
+          ? 'Perdu : un camp a gagné avant que le couple ne reste seul.'
+          : `Perdu cette fois : tu étais ${ROLE_LABEL[myRole]}.`;
 
   return (
     <>
@@ -706,6 +773,9 @@ export function EndPhase({ view }: { view: GameView }) {
           {v.title}
         </h2>
         <p className="muted" style={{ marginTop: 8 }}>
+          {end.reason}
+        </p>
+        <p className="muted" style={{ marginTop: 4 }}>
           {personal}
         </p>
         {end.winnerSide === 'mrwhite' && end.mrWhiteGuess && (
@@ -750,7 +820,7 @@ export function EndPhase({ view }: { view: GameView }) {
           </h2>
         </div>
         <ul className="stack-sm" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-          {end.roles.map(({ playerId, role }, i) => {
+          {end.roles.map(({ playerId, role, special }, i) => {
             const p: PublicPlayer | undefined = pmap.get(playerId);
             const won = end.winners.includes(playerId);
             const out = eliminatedAt.get(playerId);
@@ -764,13 +834,49 @@ export function EndPhase({ view }: { view: GameView }) {
                   </div>
                   <div className="player-meta">{out !== undefined ? `Éliminé au tour ${out}` : 'Toujours en jeu'}</div>
                 </div>
-                <RoleChip role={role} />
+                <span className="rail-chips">
+                  <RoleChip role={role} />
+                  {special && <SpecialChip id={special} />}
+                </span>
                 {won && <Trophy size={18} className="win-mark" aria-label="Gagnant" />}
               </li>
             );
           })}
         </ul>
       </section>
+
+      {(end.lovers || end.duel || end.falafel) && (
+        <section className="card card-tight stack-sm" aria-label="Liens et pouvoirs de la manche">
+          {end.lovers && (
+            <p className="row">
+              <HeartHandshake size={18} className="accent-violet" />
+              <span>
+                Amoureux : <strong>{pmap.get(end.lovers[0])?.name}</strong> et <strong>{pmap.get(end.lovers[1])?.name}</strong>
+              </span>
+            </p>
+          )}
+          {end.duel && (
+            <p className="row">
+              <Swords size={18} className="accent-violet" />
+              <span>
+                Duel : <strong>{pmap.get(end.duel.playerIds[0])?.name}</strong> contre <strong>{pmap.get(end.duel.playerIds[1])?.name}</strong>
+                {' — '}
+                {end.duel.draw ? 'duel nul' : end.duel.winnerId ? `remporté par ${pmap.get(end.duel.winnerId)?.name}` : 'personne n’est tombé'}
+              </span>
+            </p>
+          )}
+          {end.falafel && (
+            <p className="row">
+              <Sandwich size={18} className="accent-violet" />
+              <span>
+                Falafel de <strong>{pmap.get(end.falafel.vendorId)?.name}</strong> pour <strong>{pmap.get(end.falafel.targetId)?.name}</strong> :{' '}
+                {end.falafel.effect === 'protect' ? 'protecteur' : 'piégé'}
+                {end.falafel.used ? ' (utilisé)' : ' (jamais utilisé)'}
+              </span>
+            </p>
+          )}
+        </section>
+      )}
 
       <div className="stack-sm">
         {isHost ? (

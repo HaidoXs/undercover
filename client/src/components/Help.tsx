@@ -1,8 +1,11 @@
-import { BookOpen, CircleHelp, Ghost, MessageSquareQuote, Scale, Trophy, Users, VenetianMask, Vote } from 'lucide-react';
+import { BookOpen, CircleHelp, Ghost, ListOrdered, MessageSquareQuote, Scale, Trophy, Users, VenetianMask, Vote } from 'lucide-react';
 import { useState } from 'react';
+import type { SpecialRoleId } from '../../../shared/specialRoles';
+import { RolesOverview } from './RoleInfo';
 import { Sheet } from './Sheet';
 
-export function HelpContent() {
+/** `roles` : rôles spéciaux activés à afficher (liste et variantes), sans jamais dire qui les porte. */
+export function HelpContent({ roles = [], rolesTitle }: { roles?: readonly SpecialRoleId[]; rolesTitle?: string }) {
   return (
     <div>
       <section className="help-section">
@@ -84,11 +87,29 @@ export function HelpContent() {
           <li>Les intrus encore en jeu gagnent dès qu’ils sont aussi nombreux que les Civils restants.</li>
         </ul>
       </section>
+
+      {roles.length > 0 && (
+        <>
+          <RolesOverview roles={roles} title={rolesTitle} />
+          <section className="help-section">
+            <h3>
+              <ListOrdered size={18} /> Résolution d’un vote avec rôles spéciaux
+            </h3>
+            <ul>
+              <li>Le serveur compte les votes, applique le Boomerang, puis règle une égalité (Justice ou second scrutin) et la protection d’un falafel.</li>
+              <li>Fou de joie éliminé directement par le scrutin du premier tour : il gagne seul, la manche s’arrête.</li>
+              <li>Sinon, les éliminations liées (Amoureux) et la Vengeuse s’enchaînent, chaque pouvoir une seule fois.</li>
+              <li>Tout Mr. White éliminé tente alors sa chance, puis on vérifie la victoire du couple, puis celles des camps.</li>
+              <li>Si plus personne ne survit sans victoire prioritaire, la manche est nulle. Il n’y a jamais de points.</li>
+            </ul>
+          </section>
+        </>
+      )}
     </div>
   );
 }
 
-export function HelpButton({ label = 'Aide' }: { label?: string }) {
+export function HelpButton({ label = 'Aide', roles = [] }: { label?: string; roles?: readonly SpecialRoleId[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -96,7 +117,7 @@ export function HelpButton({ label = 'Aide' }: { label?: string }) {
         <CircleHelp size={20} />
       </button>
       <Sheet open={open} onClose={() => setOpen(false)} title="Comment jouer" icon={<CircleHelp size={20} />}>
-        <HelpContent />
+        <HelpContent roles={roles} />
       </Sheet>
     </>
   );

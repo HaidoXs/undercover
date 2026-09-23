@@ -31,7 +31,7 @@ export function TopBar({ view, onLeft, children }: { view: GameView; onLeft: () 
         )}
         <MusicToggle />
         <SoundToggle />
-        <HelpButton />
+        <HelpButton roles={view.settings.specialRoles} />
         <LeaveButton view={view} onLeft={onLeft} />
       </div>
     </header>

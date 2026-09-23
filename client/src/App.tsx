@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Backdrop, ConnectionBanner, Toasts } from './components/Chrome';
+import { RoleSheetHost } from './components/RoleInfo';
 import { session } from './net/session';
 import { FatalScreen, Home, JoinCode, JoinFlow, LoadingScreen, ProfileForm } from './screens/Entry';
 import { RoomScreen } from './screens/Room';
@@ -107,6 +108,7 @@ export function App() {
       <ConnectionBanner />
       <main>{content}</main>
       <Toasts />
+      <RoleSheetHost />
     </>
   );
 }

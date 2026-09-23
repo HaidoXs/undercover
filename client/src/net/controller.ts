@@ -201,5 +201,8 @@ export const game = {
   clue: (turnId: string, text: string) => call('game:clue', { turnId, text }),
   vote: (ballotId: string, targetId: string) => call('game:vote', { ballotId, targetId }),
   guess: (attemptId: string, text: string) => call('game:guess', { attemptId, text }),
+  mime: (turnId: string) => call('game:mime', { turnId }),
+  power: (powerId: string, targetId: string) => call('game:power', { powerId, targetId }),
+  falafel: (roundId: string, targetId: string) => call('game:falafel', { roundId, targetId }),
   replay: () => call('game:replay'),
 };
