@@ -1,7 +1,8 @@
-import { Eye, EyeOff, Ghost, VenetianMask } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Secret } from '../../../shared/types';
 import { cls } from '../lib/util';
+import { GhostArt, MaskArt } from './Illustrations';
 
 /** Remasque dès que l'application passe en arrière-plan (onglet caché, autre application, fenêtre quittée). */
 export function useConcealOnLeave(hide: () => void): void {
@@ -20,12 +21,17 @@ export function useConcealOnLeave(hide: () => void): void {
   }, [hide]);
 }
 
-function Guilloche() {
+/** Dos de carte : rayures et petits losanges, comme un jeu de cartes maison. */
+function CardBack() {
   return (
-    <svg className="pattern" viewBox="0 0 200 280" fill="none" stroke="currentColor" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
-      {Array.from({ length: 14 }, (_, i) => (
-        <ellipse key={i} cx="100" cy="140" rx={14 + i * 9} ry={20 + i * 12} strokeWidth="0.9" strokeDasharray={i % 2 ? '6 4' : '14 3'} />
-      ))}
+    <svg className="pattern" viewBox="0 0 200 280" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <pattern id="card-back-stripes" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+          <rect width="9" height="18" fill="#fff" opacity=".16" />
+        </pattern>
+      </defs>
+      <rect width="200" height="280" fill="url(#card-back-stripes)" />
+      <rect x="14" y="14" width="172" height="252" rx="16" fill="none" stroke="#2a1b12" strokeWidth="2.5" strokeDasharray="1 9" strokeLinecap="round" />
     </svg>
   );
 }
@@ -50,37 +56,37 @@ export function SecretCard({
           tabIndex={revealed ? -1 : 0}
           aria-label="Révéler ma carte secrète"
         >
-          <Guilloche />
+          <CardBack />
+          <span className="corner-q" aria-hidden="true">?</span>
+          <span className="corner-q br" aria-hidden="true">?</span>
           <span className="seal">
-            <VenetianMask size={46} strokeWidth={1.7} />
+            <MaskArt size={96} />
           </span>
-          <span className="cta">Touche pour révéler</span>
+          <span className="cta">Touche pour retourner</span>
           <span className="cta-sub">Cache ton écran des regards indiscrets</span>
         </button>
         <div className={cls('secret-face secret-back', secret.kind === 'mrwhite' && 'is-mrwhite')} aria-hidden={!revealed}>
           {revealed &&
             (secret.kind === 'word' ? (
               <>
-                <VenetianMask className="secret-corner" size={22} aria-hidden="true" />
-                <VenetianMask className="secret-corner br" size={22} aria-hidden="true" />
-                <p className="eyebrow">Ton mot secret</p>
+                <span className="secret-corner" aria-hidden="true">
+                  <MaskArt size={34} />
+                </span>
+                <span className="secret-corner br" aria-hidden="true">
+                  <MaskArt size={34} />
+                </span>
+                <p className="secret-label">Ton mot secret</p>
                 <p className="secret-word">{secret.word}</p>
                 <hr className="secret-rule" />
                 <p className="secret-desc">{secret.description}</p>
-                <p className="subtle" style={{ fontSize: '0.82rem', maxWidth: '28ch' }}>
-                  Civil ou Undercover ? Écoute les autres pour le deviner.
-                </p>
+                <p className="secret-foot">Civil ou Undercover ? Écoute les autres pour le deviner.</p>
               </>
             ) : (
               <>
-                <span className="ghost-orb" style={{ width: 88, height: 88 }} aria-hidden="true">
-                  <Ghost size={40} />
-                </span>
-                <p className="eyebrow" style={{ color: '#e2e8f0' }}>
-                  Ton rôle
-                </p>
+                <GhostArt className="art-float" size={78} />
+                <p className="secret-label">Ton rôle</p>
                 <p className="secret-word">Mr. White</p>
-                <p className="muted" style={{ fontSize: '0.9rem', maxWidth: '28ch' }}>
+                <p className="secret-desc">
                   Tu n’as pas de mot. Écoute les indices, fonds-toi dans la masse et devine le mot des Civils.
                 </p>
                 <div className="secret-theme">
@@ -111,37 +117,37 @@ export function SecretPeek({ secret, extra }: { secret: Secret; extra?: ReactNod
   return (
     <div className="stack-sm">
       <div className="peek">
-      <span className="pack-icon" style={{ background: 'rgba(139,92,246,.2)', color: 'var(--violet-3)' }} aria-hidden="true">
-        {secret.kind === 'mrwhite' ? <Ghost size={20} /> : <VenetianMask size={20} />}
-      </span>
-      <div className="grow" aria-live="polite">
-        <p className="subtle">{secret.kind === 'word' ? 'Ta carte' : 'Ton rôle'}</p>
-        {shown ? (
-          secret.kind === 'word' ? (
-            <>
-              <p className="peek-word">{secret.word}</p>
-              <p className="peek-desc">{secret.description}</p>
-            </>
+        <span className="peek-icon" aria-hidden="true">
+          {secret.kind === 'mrwhite' ? <GhostArt size={30} /> : <MaskArt size={36} />}
+        </span>
+        <div className="grow" aria-live="polite">
+          <p className="peek-label">{secret.kind === 'word' ? 'Ta carte secrète' : 'Ton rôle'}</p>
+          {shown ? (
+            secret.kind === 'word' ? (
+              <>
+                <p className="peek-word">{secret.word}</p>
+                <p className="peek-desc">{secret.description}</p>
+              </>
+            ) : (
+              <>
+                <p className="peek-word">Mr. White · aucun mot</p>
+                <p className="peek-desc">Thème : {secret.theme}</p>
+              </>
+            )
           ) : (
-            <>
-              <p className="peek-word">Mr. White · aucun mot</p>
-              <p className="peek-desc">Thème : {secret.theme}</p>
-            </>
-          )
-        ) : (
-          <span className="peek-hidden" aria-label="Carte masquée">
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-          </span>
-        )}
-      </div>
-      <button type="button" className="btn btn-ghost btn-sm" aria-pressed={shown} onClick={() => setShown((v) => !v)}>
-        {shown ? <EyeOff size={17} /> : <Eye size={17} />}
-        {shown ? 'Masquer' : 'Voir'}
-      </button>
+            <span className="peek-hidden" aria-label="Carte masquée">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
+        </div>
+        <button type="button" className="btn btn-ghost btn-sm" aria-pressed={shown} onClick={() => setShown((v) => !v)}>
+          {shown ? <EyeOff size={17} /> : <Eye size={17} />}
+          {shown ? 'Masquer' : 'Voir'}
+        </button>
       </div>
       {shown && extra}
     </div>

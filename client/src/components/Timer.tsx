@@ -1,32 +1,45 @@
 import { Pause } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import type { GameView } from '../../../shared/types';
-import { useCountdown } from '../hooks/time';
+import { useCountdown, type Countdown } from '../hooks/time';
 import { cls } from '../lib/util';
 
-const R = 22;
+const R = 21;
 const C = 2 * Math.PI * R;
+
+/**
+ * 0 → 1 à l'approche de zéro : le chrono grossit et se colore progressivement, sans clignoter.
+ * La montée commence à 10 s de la fin (ou à mi-parcours pour les phases courtes).
+ */
+function urgency(cd: Countdown): number {
+  if (cd.paused) return 0;
+  const window = Math.min(10_000, cd.total / 2);
+  return Math.max(0, Math.min(1, 1 - cd.remaining / window));
+}
 
 export function Timer({ view, size = 52 }: { view: GameView; size?: number }) {
   const cd = useCountdown(view);
   if (!cd) return null;
+  const u = urgency(cd);
   const urgent = !cd.paused && cd.remaining <= 5_000;
-  const warn = !cd.paused && !urgent && cd.ratio <= 0.33;
+  const warn = !cd.paused && !urgent && u > 0;
   return (
     <div
       className={cls('timer', cd.paused && 'is-paused', warn && 'is-warn', urgent && 'is-urgent')}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, '--u': u.toFixed(3) } as CSSProperties}
       role="timer"
       aria-label={cd.paused ? 'Partie en pause' : `${cd.seconds} secondes restantes`}
     >
       <svg viewBox="0 0 52 52" aria-hidden="true">
-        <circle className="track" cx="26" cy="26" r={R} fill="none" strokeWidth="4" />
+        <circle className="face" cx="26" cy="26" r="24.5" />
+        <circle className="track" cx="26" cy="26" r={R} fill="none" strokeWidth="5" />
         <circle
           className="bar"
           cx="26"
           cy="26"
           r={R}
           fill="none"
-          strokeWidth="4"
+          strokeWidth="5"
           strokeLinecap="round"
           strokeDasharray={C}
           strokeDashoffset={C * (1 - cd.ratio)}

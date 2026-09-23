@@ -51,7 +51,12 @@ function start(
   g: Game,
   roles: Role[],
   specials: Partial<Record<number, SpecialRoleId>> = {},
-  opts: { enabled?: SpecialRoleId[]; falafel?: { vendor: number; target: number; effect: 'protect' | 'sabotage' }; dead?: number[] } = {},
+  opts: {
+    enabled?: SpecialRoleId[];
+    falafel?: { vendor: number; target: number; effect: 'protect' | 'sabotage' };
+    dead?: number[];
+    clueRounds?: number;
+  } = {},
 ) {
   const { room, ids, now } = g;
   const enabled = opts.enabled ?? [...new Set(Object.values(specials))];
@@ -59,6 +64,7 @@ function start(
     undercoverCount: roles.filter((r) => r === 'undercover').length,
     mrWhite: roles.includes('mrwhite'),
     specialRoles: enabled,
+    clueRounds: opts.clueRounds ?? 1,
   });
   readyAll(g);
   room.start(ids[0], now.t);
@@ -485,6 +491,39 @@ describe('Fou de joie', () => {
     vote(g3, [[0, 2], [1, 2], [3, 2], [4, 2], [2, 0]]);
     expect(r3.end?.winnerSide).not.toBe('joyfool');
     expect(r3.alive.has(g3.ids[2])).toBe(false);
+  });
+
+  it('avec plusieurs tours d’indices avant le vote, gagne s’il est éliminé à la première phase de vote', () => {
+    const g = lobby(5);
+    const r = start(g, ['civil', 'civil', 'civil', 'civil', 'undercover'], { 2: 'joyfool' }, { clueRounds: 3 });
+    playClues(g);
+    // Trois tours d'indices ont eu lieu : la règle porte sur la phase de vote, pas sur le tour d'indices.
+    expect(r.cycle).toBe(3);
+    expect(r.voteRound).toBe(1);
+    vote(g, [[0, 2], [1, 2], [3, 2], [4, 2], [2, 0]]);
+    expect(r.end).toMatchObject({ winnerSide: 'joyfool', winners: [g.ids[2]] });
+  });
+
+  it('avec plusieurs tours, le départage de la première phase compte, mais pas la deuxième phase de vote', () => {
+    const g = lobby(5);
+    const r = start(g, ['civil', 'civil', 'civil', 'civil', 'undercover'], { 2: 'joyfool' }, { clueRounds: 2 });
+    playClues(g);
+    vote(g, [[0, 2], [1, 3], [3, 2], [4, 3], [2, 0]]);
+    advance(g, T.tieNotice + 1000);
+    expect(r.ballot?.runoff).toBe(true);
+    vote(g, [[0, 2], [1, 2], [3, 2], [4, 3], [2, 3]]);
+    expect(r.end?.winnerSide).toBe('joyfool');
+
+    const g2 = lobby(5);
+    const r2 = start(g2, ['civil', 'civil', 'civil', 'civil', 'undercover'], { 2: 'joyfool' }, { clueRounds: 2 });
+    playClues(g2);
+    advance(g2, 60_000); // aucun vote à la première phase
+    advance(g2, T.result + 1000);
+    playClues(g2);
+    expect(r2.voteRound).toBe(2);
+    vote(g2, [[0, 2], [1, 2], [3, 2], [4, 2], [2, 0]]);
+    expect(r2.alive.has(g2.ids[2])).toBe(false);
+    expect(r2.end?.winnerSide).not.toBe('joyfool');
   });
 
   it('protégé par un falafel, il n’est pas éliminé et ne gagne pas', () => {

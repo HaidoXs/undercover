@@ -73,7 +73,7 @@ export function FalafelPicker({ view }: { view: GameView }) {
       <div className="power-grid" role="group" aria-label="Bénéficiaire du falafel">
         {others.map((p) => (
           <button key={p.id} type="button" className="vote-card" aria-pressed={target === p.id} onClick={() => setTarget(p.id)} disabled={busy}>
-            <Avatar avatar={p.avatar} size={44} label="" />
+            <Avatar avatar={p.avatar} photo={p?.photo} size={44} label="" />
             <span className="vc-name">{p.name}</span>
           </button>
         ))}
@@ -167,7 +167,7 @@ export function PowerPhase({ view }: { view: GameView }) {
                 const p = pmap.get(id);
                 return (
                   <button key={id} type="button" className="vote-card" aria-pressed={target === id} onClick={() => setTarget(id)} disabled={busy}>
-                    <Avatar avatar={p?.avatar ?? 0} size={52} label="" />
+                    <Avatar avatar={p?.avatar ?? 0} photo={p?.photo} size={52} label="" />
                     <span className="vc-name">
                       {p?.name}
                       {id === view.me.id && ' (toi)'}
@@ -185,7 +185,7 @@ export function PowerPhase({ view }: { view: GameView }) {
           <div className="tie-avatars">
             {power.candidates.slice(0, justice ? undefined : 0).map((id) => (
               <div key={id} className="stack-sm" style={{ alignItems: 'center' }}>
-                <Avatar avatar={pmap.get(id)?.avatar ?? 0} size={60} label="" />
+                <Avatar avatar={pmap.get(id)?.avatar ?? 0} photo={pmap.get(id)?.photo} size={60} label="" />
                 <strong>{pmap.get(id)?.name}</strong>
               </div>
             ))}

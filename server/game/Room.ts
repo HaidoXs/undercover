@@ -2,6 +2,8 @@ import { randomBytes, randomInt } from 'node:crypto';
 import {
   AVATAR_COUNT,
   CLUE_MAX,
+  CLUE_ROUNDS_MAX,
+  CLUE_ROUNDS_MIN,
   CLUE_SECONDS_OPTIONS,
   GUESS_MAX,
   MAX_PLAYERS,
@@ -38,9 +40,14 @@ import type {
   VoteOutcome,
   WinnerSide,
 } from '../../shared/types';
-import { drawPair, isPackId, orderPackIds, PACKS, type DrawnPair } from '../packs';
+import { drawPair, findTheme, isPackId, newDrawMemory, orderPackIds, PACKS, themesFor, type DrawnPair } from '../packs';
 import { cleanLine, clueRevealsWord, foldForCompare, guessMatches } from '../text';
 import { GameError } from './errors';
+
+/** Adresse publique (non listée) d'une photo d'avatar. */
+export function photoUrl(id: string): string {
+  return `/media/avatars/${id}.webp`;
+}
 
 export interface Timings {
   /** Durée maximale de la découverte des cartes. */
@@ -102,6 +109,9 @@ export function defaultSettings(): Settings {
     clueSeconds: 45,
     voteSeconds: 60,
     specialRoles: [],
+    clueRounds: 1,
+    preciseTheme: false,
+    themeId: null,
   };
 }
 
@@ -110,6 +120,10 @@ export interface Player {
   tokenHash: string;
   name: string;
   avatar: number;
+  /** Photo importée (identifiant de fichier), vérifiée par le serveur avant d'être associée. */
+  photo: string | null;
+  /** Compte lié à cette place (jamais exposé aux autres joueurs). */
+  accountId: string | null;
   seq: number;
   ready: boolean;
   sockets: Set<string>;
@@ -169,7 +183,14 @@ interface Round {
   baseOrder: string[];
   alive: Set<string>;
   eliminations: EliminationEntry[];
+  /** Numéro global du tour d'indices. */
   cycle: number;
+  /** Tour d'indices dans le bloc en cours (1 à clueRounds), avant le prochain vote. */
+  clueRound: number;
+  /** Tours d'indices avant chaque vote, figés au lancement. */
+  clueRounds: number;
+  /** Phases de vote commencées (hors second scrutin) : 1 pendant la première. */
+  voteRound: number;
   order: string[];
   turnIndex: number;
   turnId: string;
@@ -203,7 +224,7 @@ const REASONS: Record<WinnerSide, string> = {
   intrus: 'Les intrus encore en jeu sont aussi nombreux que les Civils restants.',
   mrwhite: 'Mr. White a deviné le mot des Civils.',
   lovers: 'Les Amoureux sont les deux derniers joueurs en vie.',
-  joyfool: 'Le Fou de joie a été éliminé par le vote dès le premier tour.',
+  joyfool: 'Le Fou de joie a été éliminé directement lors de la première phase de vote.',
   draw: 'Personne n’a survécu : la manche est nulle.',
 };
 
@@ -218,7 +239,8 @@ export class Room {
   paused = false;
   pausedRemaining: number | null = null;
   round: Round | null = null;
-  readonly usedPairs = new Set<string>();
+  /** Anti-répétition du salon : paires jouées et mots vus récemment. */
+  readonly drawMemory = newDrawMemory();
   emptySince: number | null = null;
   private roundCounter = 0;
   private seq = 0;
@@ -331,7 +353,7 @@ export class Room {
 
   // ───────────────────────── membres & connexions
 
-  addPlayer(input: { name: unknown; avatar: unknown; tokenHash: string }, now: number): Player {
+  addPlayer(input: { name: unknown; avatar: unknown; tokenHash: string; photo?: string | null; accountId?: string | null }, now: number): Player {
     if (this.members().length >= MAX_PLAYERS) throw new GameError('ROOM_FULL');
     const name = this.validName(input.name, null);
     const player: Player = {
@@ -339,6 +361,8 @@ export class Room {
       tokenHash: input.tokenHash,
       name,
       avatar: this.pickAvatar(input.avatar),
+      photo: input.photo ?? null,
+      accountId: input.accountId ?? null,
       seq: this.seq++,
       ready: false,
       sockets: new Set(),
@@ -439,6 +463,39 @@ export class Room {
       if (!Array.isArray(v) || v.length > 20 || !v.every(isSpecialRoleId)) throw new GameError('BAD_REQUEST');
       next.specialRoles = orderSpecialRoles(v);
     }
+    if ('clueRounds' in patch) {
+      const v = patch.clueRounds;
+      if (!Number.isInteger(v) || (v as number) < CLUE_ROUNDS_MIN || (v as number) > CLUE_ROUNDS_MAX) throw new GameError('BAD_REQUEST');
+      next.clueRounds = v as number;
+    }
+
+    // Thème précis : un univers réellement disponible dans les packs sélectionnés.
+    const available = themesFor(next.packIds);
+    if ('themeId' in patch) {
+      const v = patch.themeId;
+      if (v !== null && (typeof v !== 'string' || !findTheme(v))) throw new GameError('BAD_REQUEST');
+      if (v !== null && !available.includes(v)) throw new GameError('NO_THEME', 'Ce thème ne fait pas partie des packs sélectionnés.');
+      next.themeId = v;
+    }
+    if ('preciseTheme' in patch) {
+      if (typeof patch.preciseTheme !== 'boolean') throw new GameError('BAD_REQUEST');
+      if (patch.preciseTheme && available.length === 0) throw new GameError('NO_THEME');
+      next.preciseTheme = patch.preciseTheme;
+    }
+    if (next.preciseTheme) {
+      if (!next.themeId || !available.includes(next.themeId)) {
+        if (available.length === 0 || 'packIds' in patch) {
+          // Les packs ne proposent plus le thème choisi : retour à la partie normale, expliqué à tous.
+          if (this.settings.preciseTheme) this.notice('Thème précis désactivé : il n’est plus disponible dans les packs sélectionnés.');
+          next.preciseTheme = false;
+          next.themeId = null;
+        } else {
+          next.themeId = available[0];
+        }
+      }
+    } else {
+      next.themeId = null;
+    }
 
     if (JSON.stringify(next) === JSON.stringify(this.settings)) return;
     this.settings = next;
@@ -447,7 +504,8 @@ export class Room {
     this.touch();
   }
 
-  updateProfile(playerId: string, patch: { name?: unknown; avatar?: unknown }): void {
+  /** `photo` : identifiant déjà vérifié par l'appelant (propriété et existence), ou null pour revenir à l'avatar. */
+  updateProfile(playerId: string, patch: { name?: unknown; avatar?: unknown; photo?: string | null }): void {
     this.requirePhase('lobby');
     const p = this.requireMember(playerId);
     const name = patch.name === undefined ? p.name : this.validName(patch.name, p.id);
@@ -458,9 +516,11 @@ export class Room {
       if (this.avatarTaken(v as number, p.id)) throw new GameError('INVALID_TARGET', 'Cet avatar est déjà pris.');
       avatar = v as number;
     }
-    if (name === p.name && avatar === p.avatar) return;
+    const photo = patch.photo === undefined ? p.photo : patch.photo;
+    if (name === p.name && avatar === p.avatar && photo === p.photo) return;
     p.name = name;
     p.avatar = avatar;
+    p.photo = photo;
     this.touch();
   }
 
@@ -474,6 +534,8 @@ export class Room {
       throw new GameError('CONFIG_INVALID', `Il faut au moins ${MIN_PLAYERS} joueurs présents pour lancer une manche.`);
     }
     if (this.settings.packIds.length === 0) throw new GameError('NO_PACK');
+    const themeId = this.settings.preciseTheme ? this.settings.themeId : null;
+    if (this.settings.preciseTheme && (!themeId || !themesFor(this.settings.packIds).includes(themeId))) throw new GameError('NO_THEME');
     const compoError = compositionError(this.settings, present.length) ?? specialRolesError(this.settings.specialRoles, present.length);
     if (compoError) throw new GameError('CONFIG_INVALID', compoError);
     const notReady = present.filter((p) => p.id !== this.hostId && !p.ready);
@@ -481,7 +543,7 @@ export class Room {
       throw new GameError('NOT_READY', `En attente de : ${notReady.map((p) => p.name).join(', ')}.`);
     }
 
-    const pair = drawPair(this.settings.packIds, this.usedPairs);
+    const pair = drawPair(this.settings.packIds, this.drawMemory, themeId);
     const composition = compositionFor(this.settings, present.length);
     const ids = shuffle(present.map((p) => p.id));
     const roles = new Map<string, Role>();
@@ -526,6 +588,9 @@ export class Room {
       alive: new Set(ids),
       eliminations: [],
       cycle: 0,
+      clueRound: 0,
+      clueRounds: this.settings.clueRounds,
+      voteRound: 0,
       order: [],
       turnIndex: 0,
       turnId: '',
@@ -569,7 +634,7 @@ export class Room {
     if (r.seen.has(playerId)) return;
     r.seen.add(playerId);
     this.touch();
-    if (this.everyoneSeen(now)) this.enterClues(now, 1);
+    if (this.everyoneSeen(now)) this.enterClues(now, 1, 1);
   }
 
   /** Le Vendeur de Falafels choisit son bénéficiaire pendant la découverte des cartes. */
@@ -592,7 +657,8 @@ export class Room {
 
   // ───────────────────────── indices
 
-  private enterClues(now: number, cycle: number): void {
+  /** `clueRound` : rang de ce tour d'indices dans le bloc qui précède le prochain vote. */
+  private enterClues(now: number, cycle: number, clueRound: number): void {
     const r = this.round as Round;
     // Falafel non offert à la fin de la découverte : le serveur choisit un bénéficiaire au hasard.
     if (r.falafel && r.falafel.targetId === null) {
@@ -602,6 +668,7 @@ export class Room {
     const alive = r.baseOrder.filter((id) => r.alive.has(id));
     const offset = (cycle - 1) % alive.length;
     r.cycle = cycle;
+    r.clueRound = clueRound;
     r.order = [...alive.slice(offset), ...alive.slice(0, offset)];
     r.turnIndex = 0;
     r.turnId = newId();
@@ -673,7 +740,9 @@ export class Room {
     const r = this.round as Round;
     r.turnIndex++;
     if (r.turnIndex >= r.order.length) {
-      this.enterVote(now, false, r.baseOrder.filter((id) => r.alive.has(id)));
+      // Chaque joueur en jeu est passé : nouveau tour d'indices, ou vote si le bloc est complet.
+      if (r.clueRound < r.clueRounds) this.enterClues(now, r.cycle + 1, r.clueRound + 1);
+      else this.enterVote(now, false, r.baseOrder.filter((id) => r.alive.has(id)));
       return;
     }
     r.turnId = newId();
@@ -701,6 +770,7 @@ export class Room {
       f.sabotageCycle = r.cycle;
       if (voters.includes(f.targetId)) blocked.add(f.targetId);
     }
+    if (!runoff) r.voteRound++;
     r.ballot = { id: newId(), runoff, candidates: [...candidates], voters, votes: new Map(), blocked };
     r.result = null;
     this.phase = 'vote';
@@ -819,8 +889,9 @@ export class Room {
     }
     const res: Resolution = { base, primary: id, queue: [], events, dead: [], mrWhite: [] };
     r.resolution = res;
-    // Fou de joie éliminé directement au premier tour : il gagne seul, tout s'arrête.
-    if (r.special.get(id) === 'joyfool' && r.cycle === 1) {
+    // Fou de joie éliminé directement lors de la première phase de vote (départage compris),
+    // quel que soit le nombre de tours d'indices qui la précèdent : il gagne seul, tout s'arrête.
+    if (r.special.get(id) === 'joyfool' && r.voteRound === 1) {
       this.eliminate(id, cause, res);
       this.endRound({ side: 'joyfool', winners: [id], reason: REASONS.joyfool });
       return;
@@ -958,7 +1029,7 @@ export class Room {
         this.continueAfterResolution(now);
         return;
       default:
-        this.enterClues(now, r.cycle + 1);
+        this.enterClues(now, r.cycle + 1, 1);
     }
   }
 
@@ -973,7 +1044,7 @@ export class Room {
     r.resolution = null;
     const victory = this.checkVictory();
     if (victory) this.endRound(victory);
-    else this.enterClues(now, r.cycle + 1);
+    else this.enterClues(now, r.cycle + 1, 1);
   }
 
   // ───────────────────────── Mr. White
@@ -1047,6 +1118,7 @@ export class Room {
       civilWord: r.pair.civil,
       undercoverWord: r.pair.undercover,
       packName: r.pair.packName,
+      themeName: r.pair.themeName,
       roles: r.baseOrder.map((playerId) => {
         const special = r.special.get(playerId);
         const role = r.roles.get(playerId) as Role;
@@ -1140,7 +1212,7 @@ export class Room {
     switch (this.phase) {
       case 'reveal':
         if (due || this.everyoneSeen(now)) {
-          this.enterClues(now, 1);
+          this.enterClues(now, 1, 1);
           return true;
         }
         return false;
@@ -1252,6 +1324,7 @@ export class Room {
           left: p.left,
           status: this.statusOf(p.id),
         };
+        if (p.photo) view.photo = photoUrl(p.photo);
         const role = this.publicRole(p.id);
         if (role) view.role = role;
         const special = this.publicSpecial(p.id);
@@ -1277,6 +1350,10 @@ export class Room {
         id: r.id,
         number: r.number,
         cycle: r.cycle,
+        clueRound: r.clueRound,
+        clueRounds: r.clueRounds,
+        voteRound: r.voteRound,
+        themeName: r.pair.themeName,
         order: [...r.order],
         turn: this.phase === 'clues' ? { playerId: r.order[r.turnIndex], turnId: r.turnId } : null,
         clues: r.clues.map((c) => ({ ...c })),

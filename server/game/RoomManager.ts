@@ -16,6 +16,12 @@ interface Binding {
   playerId: string;
 }
 
+/** Identité facultative de la personne qui entre : compte connecté et photo déjà vérifiée. */
+export interface Entrant {
+  accountId?: string | null;
+  photo?: string | null;
+}
+
 const EXPIRED_MEMORY_MS = 24 * 60 * 60_000;
 
 function hashToken(token: string): string {
@@ -83,11 +89,11 @@ export class RoomManager {
 
   // ───────────────────────── entrée dans un salon
 
-  createRoom(socketId: string, name: unknown, avatar: unknown, now: number) {
+  createRoom(socketId: string, name: unknown, avatar: unknown, now: number, entrant: Entrant = {}) {
     const code = this.generateCode();
     const room = new Room(code, this.timings, this.timeScale, now);
     const token = randomBytes(32).toString('base64url');
-    const player = room.addPlayer({ name, avatar, tokenHash: hashToken(token) }, now);
+    const player = room.addPlayer({ name, avatar, tokenHash: hashToken(token), photo: entrant.photo, accountId: entrant.accountId }, now);
     this.rooms.set(code, room);
     this.sessions.set(player.tokenHash, { code, playerId: player.id });
     this.bind(socketId, room, player.id, now);
@@ -95,27 +101,59 @@ export class RoomManager {
     return { code, token, playerId: player.id };
   }
 
-  checkRoom(rawCode: unknown) {
+  /** `accountId` : un compte qui a déjà une place dans ce salon peut la reprendre (mine: true). */
+  checkRoom(rawCode: unknown, accountId: string | null = null) {
     const code = normalizeCode(rawCode);
     const room = this.getRoom(code);
     const count = room.members().length;
-    if (count >= MAX_PLAYERS) throw new GameError('ROOM_FULL');
-    return { code, players: count, inProgress: room.phase !== 'lobby', takenAvatars: room.members().map((p) => p.avatar) };
+    const mine = accountId !== null && room.members().some((p) => p.accountId === accountId);
+    if (count >= MAX_PLAYERS && !mine) throw new GameError('ROOM_FULL');
+    return { code, players: count, inProgress: room.phase !== 'lobby', takenAvatars: room.members().map((p) => p.avatar), mine };
   }
 
-  joinRoom(socketId: string, rawCode: unknown, name: unknown, avatar: unknown, now: number) {
+  /** Nouveau jeton pour une place existante : l'ancien cesse de fonctionner. */
+  private reissue(room: Room, playerId: string): string {
+    const player = room.getPlayer(playerId) as NonNullable<ReturnType<Room['getPlayer']>>;
+    this.sessions.delete(player.tokenHash);
+    const token = randomBytes(32).toString('base64url');
+    player.tokenHash = hashToken(token);
+    this.sessions.set(player.tokenHash, { code: room.code, playerId });
+    return token;
+  }
+
+  joinRoom(socketId: string, rawCode: unknown, name: unknown, avatar: unknown, now: number, entrant: Entrant = {}) {
     const code = normalizeCode(rawCode);
     const room = this.getRoom(code);
+    // Un compte déjà assis dans ce salon reprend sa place : jamais de deuxième joueur pour la même personne.
+    const existing = entrant.accountId ? room.members().find((p) => p.accountId === entrant.accountId) : undefined;
+    if (existing) return { ...this.resumeByAccount(socketId, code, entrant.accountId as string, now), resumed: true };
     const token = randomBytes(32).toString('base64url');
-    const player = room.addPlayer({ name, avatar, tokenHash: hashToken(token) }, now);
+    const player = room.addPlayer({ name, avatar, tokenHash: hashToken(token), photo: entrant.photo, accountId: entrant.accountId }, now);
     this.sessions.set(player.tokenHash, { code, playerId: player.id });
     this.bind(socketId, room, player.id, now);
     this.broadcast(room, now);
     return { code, token, playerId: player.id };
   }
 
+  /** Reprise d'une place liée au compte connecté (autre appareil, onglet fermé). */
+  resumeByAccount(socketId: string, rawCode: unknown, accountId: string | null, now: number) {
+    const code = normalizeCode(rawCode);
+    if (!accountId) throw new GameError('SESSION_INVALID');
+    const room = this.getRoom(code);
+    const player = room.members().find((p) => p.accountId === accountId);
+    if (!player) throw new GameError('SESSION_INVALID');
+    const token = this.reissue(room, player.id);
+    this.bind(socketId, room, player.id, now);
+    this.broadcast(room, now);
+    return { code, token, playerId: player.id, name: player.name, avatar: player.avatar };
+  }
+
   /** Reprise de session (rafraîchissement, reconnexion, changement d'onglet). */
-  resume(socketId: string, rawCode: unknown, token: unknown, now: number) {
+  /**
+   * `accountId` : compte connecté sur ce socket. Un invité qui se connecte en pleine partie garde sa place ;
+   * celle-ci est simplement liée à son compte (même joueur, même rôle, même progression).
+   */
+  resume(socketId: string, rawCode: unknown, token: unknown, now: number, accountId: string | null = null) {
     const code = normalizeCode(rawCode);
     if (typeof token !== 'string' || token.length < 20 || token.length > 100) throw new GameError('SESSION_INVALID');
     const room = this.getRoom(code);
@@ -127,9 +165,17 @@ export class RoomManager {
       this.sessions.delete(hash);
       throw new GameError('SESSION_INVALID');
     }
+    if (accountId && !player.accountId && !room.members().some((p) => p.accountId === accountId)) player.accountId = accountId;
     this.bind(socketId, room, player.id, now);
     this.broadcast(room, now);
     return { code, playerId: player.id };
+  }
+
+  /** Photos affichées dans un salon : jamais supprimées tant qu'elles servent. */
+  photosInUse(): Set<string> {
+    const used = new Set<string>();
+    for (const room of this.rooms.values()) for (const p of room.players) if (p.photo) used.add(p.photo);
+    return used;
   }
 
   leave(socketId: string, now: number): void {

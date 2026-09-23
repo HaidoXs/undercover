@@ -1,14 +1,46 @@
 # Blueprint Render : « New + » → « Blueprint » → sélectionner ce dépôt.
+# Offre gratuite : pas de disque persistant, donc les comptes, profils et photos sont stockés
+# dans une base Turso gratuite (DATABASE_URL + DATABASE_AUTH_TOKEN, voir le README).
+# Sans ces deux variables, le jeu marche, mais comptes et photos sont effacés à chaque redémarrage.
 services:
   - type: web
     name: undercover
     runtime: node
-    plan: free # passer en « starter » pour éviter la mise en veille (voir README)
+    plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: "22"
+      - key: NODE_ENV
+        value: production
       - key: TRUST_PROXY
         value: "1"
+      # Secret des sessions, généré une fois par Render et conservé.
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      # Adresse publique exacte du site (ex. https://undercover-xxxx.onrender.com), sans barre finale.
+      - key: PUBLIC_URL
+        sync: false
+      # Base Turso : adresse libsql://… et jeton d'accès.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false
+      # Connexion Google.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Facultatif : inscription par e-mail et mot de passe (fournisseur SMTP au choix).
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false

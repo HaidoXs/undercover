@@ -4,40 +4,67 @@
 
 .role-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
 }
 
 @media (min-width: 440px) {
   .role-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
+/* La carte entière se coche ; le bouton ⓘ reste à part (jamais imbriqué dans le bouton). */
 .role-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 12px 10px 14px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
-  transition:
-    border-color 0.22s var(--ease),
-    background-color 0.22s var(--ease);
+  position: relative;
+  min-width: 0;
 }
 
-.role-card.is-on {
-  border-color: rgba(94, 234, 212, 0.5);
-  background:
-    radial-gradient(120% 100% at 0% 0%, rgba(94, 234, 212, 0.14), transparent 60%),
-    linear-gradient(180deg, rgba(94, 234, 212, 0.06), rgba(94, 234, 212, 0.02));
+.role-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 14px;
+  text-align: left;
+  border-radius: 18px;
+  border: 2px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
+  transition:
+    border-color 0.2s var(--ease),
+    background-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease),
+    transform 0.25s var(--ease-bounce);
+}
+
+.role-toggle:hover:not([aria-disabled='true']) {
+  border-color: var(--edge);
+  transform: translateY(-2px);
+}
+
+.role-toggle:active:not([aria-disabled='true']) {
+  transform: translateY(1px);
+}
+
+.role-toggle[aria-disabled='true'] {
+  cursor: default;
+}
+
+.role-toggle[aria-pressed='true'] {
+  border: var(--bw) solid var(--edge);
+  background: var(--tone-soft);
+  box-shadow: var(--pop);
 }
 
 .role-card-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  width: 100%;
+  padding-right: 38px;
 }
 
 .role-icon,
@@ -45,42 +72,61 @@
   display: grid;
   place-items: center;
   flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 2px solid var(--edge);
+  background: var(--tone-soft, var(--violet-soft));
+  color: var(--ink);
+}
+
+.role-icon {
+  transform: rotate(-5deg);
+  transition:
+    transform 0.35s var(--ease-bounce),
+    background-color 0.2s var(--ease);
+}
+
+.role-toggle[aria-pressed='true'] .role-icon {
+  background: var(--tone);
+  transform: rotate(4deg) scale(1.06);
+}
+
+.role-dot {
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  background: rgba(139, 92, 246, 0.16);
-  color: var(--violet-3);
-}
-
-.role-card.is-on .role-icon {
-  background: linear-gradient(135deg, #5eead4, #0d9488);
-  color: #032a27;
 }
 
 .role-name {
   display: block;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-weight: 620;
+  font-size: 1.08rem;
   line-height: 1.2;
 }
 
 .role-meta {
   display: block;
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: var(--text-3);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink-3);
 }
 
 .role-tagline {
-  font-size: 0.86rem;
+  font-size: 0.88rem;
   line-height: 1.4;
-  color: var(--text-2);
+  color: var(--ink-2);
 }
 
-.role-card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.role-toggle .select-state {
   margin-top: auto;
+}
+
+.info-btn.card-info {
+  position: absolute;
+  top: 12px;
+  right: 12px;
 }
 
 /* Bouton ⓘ : cible tactile confortable (44 px avec la zone de clic étendue). */
@@ -91,24 +137,30 @@
   flex: none;
   width: 34px;
   height: 34px;
+  padding: 0;
   border-radius: 50%;
-  border: 1px solid var(--line-strong);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--violet-3);
+  border: 2px solid var(--edge);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 2px 0 var(--edge);
   transition:
     background-color 0.2s var(--ease),
-    color 0.2s var(--ease);
+    transform 0.1s var(--ease);
 }
 
 .info-btn::after {
   content: '';
   position: absolute;
-  inset: -5px;
+  inset: -6px;
 }
 
 .info-btn:hover {
-  background: rgba(139, 92, 246, 0.18);
-  color: #fff;
+  background: var(--yellow);
+}
+
+.info-btn:active {
+  transform: translateY(2px);
+  box-shadow: none;
 }
 
 .role-sheet {
@@ -119,9 +171,13 @@
 
 .role-sheet-tagline {
   font-family: var(--font-display);
-  font-size: 1.12rem;
+  font-size: 1.18rem;
   font-weight: 560;
-  color: var(--text);
+  color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--yellow-soft);
+  border: 2px solid var(--edge);
 }
 
 .role-sheet h3 {
@@ -129,17 +185,18 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--violet-3);
+  color: var(--orange-ink);
 }
 
 .role-sheet p,
 .role-sheet li {
-  color: var(--text-2);
-  font-size: 0.95rem;
+  color: var(--ink-2);
+  font-size: 0.96rem;
   line-height: 1.5;
 }
 
@@ -166,52 +223,60 @@
   gap: 12px;
   padding: 8px 10px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--line);
+  background: var(--paper-2);
+  border: 2px solid var(--line);
 }
 
 .roles-overview strong {
   display: block;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .roles-overview .subtle {
   display: block;
-  font-size: 0.84rem;
+  font-size: 0.86rem;
 }
 
 /* Rôle privé du joueur (carte et rappel) */
 .my-role {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(139, 92, 246, 0.12);
-  border: 1px solid rgba(167, 139, 250, 0.3);
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--violet-soft);
+  border: 2px solid var(--edge);
+  box-shadow: var(--pop-sm);
   text-align: left;
+  animation: pop-in 0.35s var(--ease-bounce);
+}
+
+.my-role .role-dot {
+  background: var(--violet);
 }
 
 .my-role .lbl {
   display: block;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-3);
+  color: var(--violet-ink);
 }
 
 .my-role .val {
   display: block;
-  font-weight: 800;
-  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 620;
+  font-size: 1.1rem;
+  color: var(--ink);
 }
 
 .my-role .extra {
   display: block;
-  font-size: 0.84rem;
-  color: var(--text-2);
+  font-size: 0.88rem;
+  color: var(--ink-2);
 }
 
 .special-chip {
@@ -221,24 +286,32 @@
   min-height: 24px;
   padding: 0 8px;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 800;
-  color: var(--violet-3);
-  background: rgba(139, 92, 246, 0.14);
-  border: 1px solid rgba(167, 139, 250, 0.35);
+  color: var(--ink);
+  background: var(--violet-soft);
+  border: 2px solid var(--edge);
   white-space: nowrap;
 }
 
+.special-chip svg {
+  color: var(--violet-ink);
+}
+
 .special-chip.mint {
-  color: var(--mint-2);
-  background: rgba(94, 234, 212, 0.1);
-  border-color: rgba(94, 234, 212, 0.35);
+  background: var(--mint-soft);
+}
+
+.special-chip.mint svg {
+  color: var(--mint-ink);
 }
 
 .special-chip.amber {
-  color: var(--amber-2);
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.35);
+  background: var(--yellow-soft);
+}
+
+.special-chip.amber svg {
+  color: var(--yellow-ink);
 }
 
 .rail-chips {
@@ -248,7 +321,7 @@
   gap: 4px;
 }
 
-/* Liste des joueurs sur mobile : colonnes de 64 px, pastilles réduites à leur icône. */
+/* Liste des joueurs sur mobile : colonnes étroites, pastilles réduites à leur icône. */
 @media (max-width: 959.98px) {
   .rail-item .rail-chips {
     max-width: 100%;
@@ -257,7 +330,7 @@
     display: none;
   }
   .rail-item .special-chip:has(.chip-label) {
-    width: 24px;
+    width: 26px;
     padding: 0;
     justify-content: center;
   }
@@ -291,79 +364,84 @@
   gap: 10px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid var(--line);
-  font-size: 0.93rem;
-  color: var(--text-2);
-  animation: rise 0.45s var(--ease) both;
+  background: var(--paper-2);
+  border: 2px solid var(--line-strong);
+  font-size: 0.95rem;
+  color: var(--ink-2);
+  animation: rise 0.4s var(--ease) both;
 }
 
 .events li svg {
   flex: none;
   margin-top: 2px;
-  color: var(--violet-3);
+  color: var(--orange-ink);
 }
 
 .events li strong {
-  color: var(--text);
+  color: var(--ink);
 }
 
 .events li:nth-child(2) {
-  animation-delay: 0.25s;
+  animation-delay: 0.2s;
 }
 
 .events li:nth-child(3) {
-  animation-delay: 0.5s;
+  animation-delay: 0.4s;
 }
 
 .events li:nth-child(4) {
-  animation-delay: 0.75s;
+  animation-delay: 0.6s;
 }
 
 .power-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 @media (min-width: 620px) {
   .power-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 /* Carte d'indice mimée (Mr. Meme) */
 .clue-card.is-meme {
-  border-color: rgba(251, 191, 36, 0.55);
+  background: var(--yellow-soft);
+  border-style: dashed;
+}
+
+.clue-card.is-meme.is-current {
+  border-style: solid;
 }
 
 .cc-mime {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.86rem;
-  font-weight: 750;
-  color: var(--amber-2);
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--yellow-ink);
 }
 
 .meme-form {
-  border-color: rgba(251, 191, 36, 0.45);
-  background:
-    radial-gradient(120% 90% at 0% 0%, rgba(251, 191, 36, 0.14), transparent 55%),
-    linear-gradient(180deg, rgba(31, 41, 74, 0.85), rgba(19, 27, 51, 0.9));
+  border-width: 3px;
+  background: var(--dots), var(--yellow-soft);
+  box-shadow: var(--pop-lg);
+}
+
+.meme-form .h3 svg {
+  color: var(--yellow-ink) !important;
 }
 
 .victory.side-lovers {
-  --v: #f9a8d4;
-  --v-soft: rgba(249, 168, 212, 0.2);
+  --v-soft: var(--pink-soft);
 }
 
 .victory.side-joyfool {
-  --v: var(--amber);
-  --v-soft: rgba(251, 191, 36, 0.2);
+  --v-soft: var(--yellow-soft);
 }
 
 .victory.side-draw {
-  --v: var(--text-3);
-  --v-soft: rgba(148, 163, 184, 0.15);
+  --v-soft: var(--sky-soft);
 }

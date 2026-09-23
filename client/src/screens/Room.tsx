@@ -1,11 +1,15 @@
-import { LogOut, Music, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, ChevronRight, CircleHelp, CircleUserRound, LogOut, Moon, Music, SlidersHorizontal, Sun, Volume2, VolumeX } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { GameView } from '../../../shared/types';
 import { Brand, Spinner } from '../components/Chrome';
-import { HelpButton } from '../components/Help';
+import { AccountButton, AccountPanel, ThemeToggle } from '../components/Account';
+import { HelpButton, HelpContent } from '../components/Help';
 import { Sheet } from '../components/Sheet';
 import { setMusicEnabled, useAmbientMusic, useMusicEnabled } from '../lib/music';
 import { setMuted, useMuted } from '../lib/sound';
+import { pushPrefs, useAccount } from '../net/account';
+import { setThemePref, useTheme } from '../lib/theme';
+import type { SpecialRoleId } from '../../../shared/specialRoles';
 import { leaveRoom } from '../net/controller';
 import { toast } from '../state/store';
 import { GameScreen } from './game/Game';
@@ -29,12 +33,75 @@ export function TopBar({ view, onLeft, children }: { view: GameView; onLeft: () 
             </span>
           </>
         )}
-        <MusicToggle />
-        <SoundToggle />
-        <HelpButton roles={view.settings.specialRoles} />
+        {/* Sur ordinateur, chaque réglage a son bouton ; sur téléphone, ils sont réunis dans un menu. */}
+        <span className="topbar-tools">
+          <MusicToggle />
+          <SoundToggle />
+        </span>
+        <ThemeToggle />
+        <span className="topbar-tools">
+          <AccountButton />
+          <HelpButton roles={view.settings.specialRoles} />
+        </span>
+        <SettingsMenu roles={view.settings.specialRoles} />
         <LeaveButton view={view} onLeft={onLeft} />
       </div>
     </header>
+  );
+}
+
+/** Menu du téléphone : musique, tic-tac, thème, compte et règles, avec des lignes faciles à toucher. */
+function SettingsMenu({ roles }: { roles: readonly SpecialRoleId[] }) {
+  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState<'menu' | 'account' | 'help'>('menu');
+  const music = useMusicEnabled();
+  const muted = useMuted();
+  const theme = useTheme();
+  const account = useAccount();
+  const close = () => {
+    setOpen(false);
+    setPanel('menu');
+  };
+  const title = panel === 'account' ? (account.status === 'signed-in' ? 'Mon compte' : 'Compte (facultatif)') : panel === 'help' ? 'Comment jouer' : 'Réglages';
+  return (
+    <>
+      <button type="button" className="icon-btn topbar-menu" aria-label="Réglages, compte et aide" title="Réglages" onClick={() => setOpen(true)}>
+        <SlidersHorizontal size={20} />
+      </button>
+      <Sheet open={open} onClose={close} title={title} icon={<SlidersHorizontal size={20} />}>
+        {panel !== 'menu' && (
+          <button type="button" className="btn btn-quiet btn-sm menu-back" onClick={() => setPanel('menu')}>
+            <ArrowLeft size={17} /> Réglages
+          </button>
+        )}
+        {panel === 'menu' && (
+          <div className="menu-list">
+            <button type="button" className="menu-row" aria-pressed={music} onClick={() => { setMusicEnabled(!music); pushPrefs(); }}>
+              <Music size={20} /> <span className="grow">Musique d’ambiance</span> <span className="menu-state">{music ? 'Activée' : 'Coupée'}</span>
+            </button>
+            <button type="button" className="menu-row" aria-pressed={!muted} onClick={() => { setMuted(!muted); pushPrefs(); }}>
+              {muted ? <VolumeX size={20} /> : <Volume2 size={20} />} <span className="grow">Tic-tac du chrono</span>{' '}
+              <span className="menu-state">{muted ? 'Coupé' : 'Activé'}</span>
+            </button>
+            <button type="button" className="menu-row" onClick={() => { setThemePref(theme === 'dark' ? 'light' : 'dark'); pushPrefs(); }}>
+              {theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />} <span className="grow">Thème</span>{' '}
+              <span className="menu-state">{theme === 'dark' ? 'Sombre' : 'Clair'}</span>
+            </button>
+            {account.config?.accounts && (
+              <button type="button" className="menu-row" onClick={() => setPanel('account')}>
+                <CircleUserRound size={20} /> <span className="grow">{account.status === 'signed-in' ? 'Mon compte' : 'Se connecter (facultatif)'}</span>
+                <ChevronRight size={18} />
+              </button>
+            )}
+            <button type="button" className="menu-row" onClick={() => setPanel('help')}>
+              <CircleHelp size={20} /> <span className="grow">Comment jouer</span> <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
+        {panel === 'account' && <AccountPanel onDone={close} />}
+        {panel === 'help' && <HelpContent roles={roles} />}
+      </Sheet>
+    </>
   );
 }
 
@@ -48,7 +115,10 @@ function MusicToggle() {
       aria-pressed={!on}
       aria-label={on ? 'Couper la musique' : 'Remettre la musique'}
       title={on ? 'Couper la musique' : 'Remettre la musique'}
-      onClick={() => setMusicEnabled(!on)}
+      onClick={() => {
+        setMusicEnabled(!on);
+        pushPrefs();
+      }}
     >
       <Music size={19} />
     </button>
@@ -65,7 +135,10 @@ function SoundToggle() {
       aria-pressed={muted}
       aria-label={muted ? 'Réactiver le tic-tac' : 'Couper le tic-tac'}
       title={muted ? 'Réactiver le tic-tac' : 'Couper le tic-tac'}
-      onClick={() => setMuted(!muted)}
+      onClick={() => {
+        setMuted(!muted);
+        pushPrefs();
+      }}
     >
       {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
     </button>

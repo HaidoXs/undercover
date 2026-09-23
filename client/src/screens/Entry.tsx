@@ -3,21 +3,20 @@ import {
   CircleHelp,
   DoorOpen,
   Eye,
-  Fingerprint,
   House,
   Info,
   KeyRound,
   MessageSquareQuote,
   RotateCcw,
   Search,
-  SearchX,
+  ShieldCheck,
   Sparkles,
   Users,
-  VenetianMask,
   Vote,
   WifiOff,
 } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { BluffScene, GhostArt, MagnifierArt, MaskArt } from '../components/Illustrations';
 import { AVATARS } from '../../../shared/avatars';
 import { CODE_ALPHABET, CODE_LENGTH, MAX_PLAYERS, NAME_MAX, NAME_MIN } from '../../../shared/constants';
 import { Avatar } from '../components/Avatar';
@@ -27,8 +26,12 @@ import { HelpContent } from '../components/Help';
 import { SPECIAL_ROLES } from '../../../shared/specialRoles';
 import { Sheet } from '../components/Sheet';
 import { cls, submitOnEnter } from '../lib/util';
-import { checkRoom, createRoom, fatalTitle, joinRoom, resumeSaved } from '../net/controller';
-import { session } from '../net/session';
+import { saveAccountProfile, useAccount } from '../net/account';
+import { checkRoom, createRoom, fatalTitle, joinRoom, resumeSaved, resumeWithAccount } from '../net/controller';
+import { discardGuestPhoto } from '../net/photos';
+import { session, type ProfilePhoto } from '../net/session';
+import { PhotoPicker } from '../components/PhotoPicker';
+import { AccountButton, ThemeToggle } from '../components/Account';
 import { useApp, type Fatal } from '../state/store';
 
 // ───────────────────────── accueil
@@ -37,64 +40,77 @@ export function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () =>
   const [help, setHelp] = useState(false);
   return (
     <div className="home">
+      <div className="home-top">
+        <ThemeToggle />
+        <AccountButton />
+      </div>
       <div className="shell">
-        <header className="hero enter">
-          <div className="hero-cards" aria-hidden="true">
-            <div className="hero-card">
-              <Fingerprint size={40} strokeWidth={1.6} />
-            </div>
-            <div className="hero-card">
-              <Search size={40} strokeWidth={1.6} />
-            </div>
-            <div className="hero-card">
-              <VenetianMask size={50} strokeWidth={1.7} />
-            </div>
-          </div>
-          <p className="eyebrow">Bluff & enquête entre amis</p>
-          <h1 className="display hero-title">Undercover</h1>
-          <p className="hero-sub">Un mot secret, des indices à double sens et des intrus à démasquer.</p>
+        <header className="hero">
+          <BluffScene className="hero-scene" />
+          <p className="hero-kicker enter">
+            <span>Bluff</span>
+            <span>Indices</span>
+            <span>Votes</span>
+          </p>
+          <h1 className="hero-title" aria-label="Undercover">
+            {'Undercover'.split('').map((c, i) => (
+              <span key={i} aria-hidden="true" style={{ '--i': i } as CSSProperties}>
+                {c}
+              </span>
+            ))}
+          </h1>
+          <p className="hero-sub enter-2">Un mot secret, des indices à double sens et des intrus à démasquer entre amis.</p>
         </header>
 
         <div className="home-actions enter-2">
-          <button type="button" className="btn btn-primary btn-lg" onClick={onCreate}>
-            <Sparkles size={20} /> Créer une partie
+          <button type="button" className="btn btn-primary btn-xl" onClick={onCreate}>
+            <span className="btn-icon" aria-hidden="true">
+              <Sparkles size={22} />
+            </span>
+            <span className="btn-text">
+              Créer une partie
+              <small>Tu seras l’hôte du salon</small>
+            </span>
           </button>
-          <button type="button" className="btn btn-ghost btn-lg" onClick={onJoin}>
-            <DoorOpen size={20} /> Rejoindre une partie
+          <button type="button" className="btn btn-secondary btn-xl" onClick={onJoin}>
+            <span className="btn-icon" aria-hidden="true">
+              <DoorOpen size={22} />
+            </span>
+            <span className="btn-text">
+              Rejoindre une partie
+              <small>Avec un code ou un lien</small>
+            </span>
           </button>
         </div>
 
-        <ol className="home-steps enter-3" aria-label="Déroulement d’une manche" style={{ listStyle: 'none', padding: 0, margin: '30px 0 0' }}>
+        <ol className="home-steps enter-3" aria-label="Déroulement d’une manche">
           <li className="step">
             <span className="step-icon">
-              <Eye size={20} />
+              <Eye size={18} />
             </span>
-            <div>
-              <strong>Découvre ton mot</strong>
-              <span>En secret. Mais es-tu vraiment Civil ?</span>
-            </div>
+            <span>
+              <strong>Découvre ton mot</strong> en secret
+            </span>
           </li>
           <li className="step">
             <span className="step-icon">
-              <MessageSquareQuote size={20} />
+              <MessageSquareQuote size={18} />
             </span>
-            <div>
-              <strong>Donne un indice</strong>
-              <span>Assez clair pour tes alliés, pas trop.</span>
-            </div>
+            <span>
+              <strong>Donne un indice</strong> sans te trahir
+            </span>
           </li>
           <li className="step">
             <span className="step-icon">
-              <Vote size={20} />
+              <Vote size={18} />
             </span>
-            <div>
-              <strong>Vote et démasque</strong>
-              <span>Élimine les intrus avant qu’ils gagnent.</span>
-            </div>
+            <span>
+              <strong>Vote</strong> contre l’intrus
+            </span>
           </li>
         </ol>
 
-        <footer className="home-foot">
+        <footer className="home-foot enter-3">
           <span className="row">
             <Users size={16} /> 3 à {MAX_PLAYERS} joueurs
           </span>
@@ -119,7 +135,7 @@ function PageHead({ onBack, title, children }: { onBack: () => void; title: stri
       <button type="button" className="icon-btn" onClick={onBack} aria-label="Retour">
         <ArrowLeft size={20} />
       </button>
-      <h1 className="grow h2 display">{title}</h1>
+      <h1 className="grow page-title">{title}</h1>
       {children}
     </div>
   );
@@ -184,13 +200,13 @@ export function JoinCode({ onBack, onFound }: { onBack: () => void; onFound: (co
   return (
     <div className="shell">
       <PageHead onBack={onBack} title="Rejoindre une partie" />
-      <form className="card card-glow stack enter-2" onSubmit={onSubmit} noValidate>
-        <div className="stack-sm">
-          <span className="state-icon" style={{ width: 56, height: 56, borderRadius: 18 }} aria-hidden="true">
-            <KeyRound size={26} />
-          </span>
-          <h2 className="h3">Code du salon</h2>
-          <p className="muted">Saisis les 6 caractères partagés par l’hôte, ou ouvre directement son lien d’invitation.</p>
+      <form className="card card-feature stack enter-2" onSubmit={onSubmit} noValidate>
+        <div className="form-intro">
+          <MagnifierArt className="form-intro-art" size={64} />
+          <div className="stack-xs">
+            <h2 className="h3">Code du salon</h2>
+            <p className="muted">Saisis les 6 caractères partagés par l’hôte, ou ouvre directement son lien d’invitation.</p>
+          </div>
         </div>
 
         <div
@@ -266,6 +282,7 @@ export function ProfileForm({
   taken = [],
   playerCount,
   inProgress,
+  mine,
   onBack,
 }: {
   mode: 'create' | 'join';
@@ -273,13 +290,32 @@ export function ProfileForm({
   taken?: number[];
   playerCount?: number;
   inProgress?: boolean;
+  /** Le compte connecté a déjà une place dans ce salon. */
+  mine?: boolean;
   onBack: () => void;
 }) {
-  const saved = session.getProfile();
+  const account = useAccount();
+  // Profil du compte connecté en priorité, sinon celui mémorisé sur cet appareil.
+  const accountProfile = account.view?.profile ?? null;
+  const saved = accountProfile
+    ? { name: accountProfile.name, avatar: accountProfile.avatar, photo: accountProfile.photo ? { id: accountProfile.photo, url: accountProfile.photoUrl ?? '', key: null } : null }
+    : session.getProfile();
   const [name, setName] = useState(saved?.name ?? '');
   const [avatar, setAvatar] = useState(() =>
     firstFree(saved?.avatar ?? Math.floor(Math.random() * AVATARS.length), taken),
   );
+  const [photo, setPhoto] = useState<ProfilePhoto | null>(saved?.photo ?? null);
+  const [accountBusy, setAccountBusy] = useState(false);
+  const dirty = useRef(false);
+
+  // Compte chargé après l'ouverture du formulaire : on reprend son profil tant que rien n'a été modifié.
+  useEffect(() => {
+    if (!accountProfile || dirty.current) return;
+    setName(accountProfile.name);
+    setAvatar(firstFree(accountProfile.avatar, taken));
+    setPhoto(accountProfile.photo ? { id: accountProfile.photo, url: accountProfile.photoUrl ?? '', key: null } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountProfile?.name, accountProfile?.avatar, accountProfile?.photo]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resumeBusy, setResumeBusy] = useState(false);
@@ -299,9 +335,28 @@ export function ProfileForm({
     }
     setBusy(true);
     setError(null);
-    const res = mode === 'create' ? await createRoom(trimmed, avatar) : await joinRoom(code as string, trimmed, avatar);
+    const res = mode === 'create' ? await createRoom(trimmed, avatar, photo) : await joinRoom(code as string, trimmed, avatar, photo);
     if (!res.ok) {
       setBusy(false);
+      setError(res.error.message);
+      return;
+    }
+    void saveAccountProfile({ name: trimmed, avatar, photo: photo?.id ?? null, photoKey: photo?.key ?? null });
+  };
+
+  const changePhoto = (next: ProfilePhoto | null) => {
+    dirty.current = true;
+    if (photo && photo.id !== next?.id) discardGuestPhoto(photo);
+    setPhoto(next);
+    setError(null);
+  };
+
+  const onResumeAccount = async () => {
+    if (!code) return;
+    setAccountBusy(true);
+    const res = await resumeWithAccount(code);
+    if (!res.ok) {
+      setAccountBusy(false);
       setError(res.error.message);
     }
   };
@@ -337,7 +392,19 @@ export function ProfileForm({
               </span>
             </div>
           )}
-          {resume && (
+          {mine && (
+            <div className="resume-card">
+              <ShieldCheck size={26} aria-hidden="true" />
+              <div className="grow">
+                <strong>Ta place t’attend</strong>
+                <p className="subtle">Ton compte est déjà assis dans ce salon : reprends-la sans créer de deuxième joueur.</p>
+              </div>
+              <button type="button" className="btn btn-mint btn-sm" onClick={onResumeAccount} disabled={accountBusy}>
+                {accountBusy ? <Spinner size={16} /> : <RotateCcw size={16} />} Reprendre
+              </button>
+            </div>
+          )}
+          {resume && !mine && (
             <div className="resume-card">
               <Avatar avatar={resume.avatar} size={44} label="" />
               <div className="grow">
@@ -352,9 +419,9 @@ export function ProfileForm({
         </div>
       )}
 
-      <form className="card card-glow stack enter-2" onSubmit={submit} noValidate>
+      <form className="card card-feature stack enter-2" onSubmit={submit} noValidate>
         <div className="profile-preview" aria-hidden="true">
-          <Avatar avatar={avatar} size={88} label="" />
+          <Avatar avatar={avatar} photo={photo?.url} size={88} label="" />
           <span className="name">{trimmed || 'Ton pseudo'}</span>
         </div>
 
@@ -368,6 +435,7 @@ export function ProfileForm({
               className="input"
               value={name}
               onChange={(e) => {
+                dirty.current = true;
                 setName(e.target.value);
                 setError(null);
               }}
@@ -388,12 +456,24 @@ export function ProfileForm({
 
         <div className="field">
           <span className="label">Ton avatar</span>
-          <AvatarPicker value={avatar} onChange={setAvatar} taken={taken} />
+          <AvatarPicker
+            value={avatar}
+            onChange={(v) => {
+              dirty.current = true;
+              setAvatar(v);
+            }}
+            taken={taken}
+          />
           {mode === 'join' && taken.length > 0 && (
             <p className="form-hint">
               <Info size={15} /> Les avatars barrés sont déjà pris dans ce salon.
             </p>
           )}
+        </div>
+
+        <div className="field">
+          <span className="label">Ou ta propre photo</span>
+          <PhotoPicker value={photo} onChange={changePhoto} />
         </div>
 
         <FormError message={error} id={errorId} />
@@ -413,9 +493,11 @@ export function ProfileForm({
 /** Arrivée par code ou par lien d'invitation : on vérifie le salon avant d'afficher le formulaire. */
 export function JoinFlow({ code, onBack, onRetry }: { code: string; onBack: () => void; onRetry: () => void }) {
   const conn = useApp((s) => s.conn);
+  // Après une connexion au compte, le salon est revérifié : une place existante peut être reprise.
+  const signedIn = useAccount().status === 'signed-in';
   const [state, setState] = useState<
     | { status: 'loading' }
-    | { status: 'ok'; taken: number[]; players: number; inProgress: boolean }
+    | { status: 'ok'; taken: number[]; players: number; inProgress: boolean; mine: boolean }
     | { status: 'error'; fatal: Fatal }
   >({ status: 'loading' });
 
@@ -424,13 +506,13 @@ export function JoinFlow({ code, onBack, onRetry }: { code: string; onBack: () =
     let cancelled = false;
     void checkRoom(code).then((res) => {
       if (cancelled) return;
-      if (res.ok) setState({ status: 'ok', taken: res.takenAvatars, players: res.players, inProgress: res.inProgress });
+      if (res.ok) setState({ status: 'ok', taken: res.takenAvatars, players: res.players, inProgress: res.inProgress, mine: res.mine });
       else setState({ status: 'error', fatal: { title: fatalTitle(res.error.code), message: res.error.message, code: res.error.code } });
     });
     return () => {
       cancelled = true;
     };
-  }, [code, conn]);
+  }, [code, conn, signedIn]);
 
   if (state.status === 'loading') {
     return <LoadingScreen label={conn === 'online' ? 'Recherche du salon…' : 'Connexion au serveur…'} offline={conn === 'offline'} />;
@@ -445,6 +527,7 @@ export function JoinFlow({ code, onBack, onRetry }: { code: string; onBack: () =
       taken={state.taken}
       playerCount={state.players}
       inProgress={state.inProgress}
+      mine={state.mine}
       onBack={onBack}
     />
   );
@@ -456,8 +539,8 @@ export function LoadingScreen({ label, offline, onCancel }: { label: string; off
   return (
     <div className="shell">
       <div className="state-screen" role="status" aria-live="polite">
-        <span className="state-icon loader-mask">
-          <VenetianMask size={34} />
+        <span className="state-art loader-mask" aria-hidden="true">
+          <MaskArt size={96} />
         </span>
         <p className="h3">{label}</p>
         {offline ? (
@@ -483,8 +566,8 @@ export function FatalScreen({ fatal, onHome, onRetry }: { fatal: Fatal; onHome: 
     <div className="shell">
       <div className="state-screen enter">
         <Brand />
-        <span className="state-icon tone-coral" style={{ marginTop: 18 }}>
-          {codeProblem ? <SearchX size={34} /> : <DoorOpen size={34} />}
+        <span className="state-art" aria-hidden="true">
+          {codeProblem ? <MagnifierArt size={96} /> : <GhostArt size={88} />}
         </span>
         <h1 className="h2 display">{fatal.title}</h1>
         <p className="muted" style={{ maxWidth: '36ch' }}>

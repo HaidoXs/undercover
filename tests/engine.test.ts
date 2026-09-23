@@ -3,7 +3,7 @@ import { compositionError } from '../shared/rules';
 import type { Role } from '../shared/types';
 import { GameError } from '../server/game/errors';
 import { DEFAULT_TIMINGS, Room } from '../server/game/Room';
-import { drawPair, PACKS } from '../server/packs';
+import { drawPair, newDrawMemory, PACKS } from '../server/packs';
 import { clueRevealsWord, guessMatches } from '../server/text';
 
 const T = DEFAULT_TIMINGS;
@@ -78,7 +78,7 @@ function advance(setup: Setup, ms: number) {
 
 describe('composition', () => {
   it('exige des Civils strictement majoritaires', () => {
-    const base = { undercoverCount: 1, mrWhite: false, packIds: ['animaux'], clueSeconds: 45, voteSeconds: 60, specialRoles: [] };
+    const base = { undercoverCount: 1, mrWhite: false, packIds: ['animaux'], clueSeconds: 45, voteSeconds: 60, specialRoles: [], clueRounds: 1, preciseTheme: false, themeId: null };
     expect(compositionError(base, 3)).toBeNull();
     expect(compositionError(base, 2)).toMatch(/au moins 3/);
     expect(compositionError({ ...base, undercoverCount: 2 }, 4)).toMatch(/Trop d'intrus/);
@@ -418,29 +418,62 @@ describe('connexions', () => {
 });
 
 describe('packs et tirage', () => {
+  const general = (id: string) => PACKS.find((p) => p.id === id)!.universes.find((u) => !u.precise)!;
+
   it('tire uniquement dans les packs choisis, sans répétition avant épuisement', () => {
-    const used = new Set<string>();
-    const pack = PACKS.find((p) => p.id === 'football')!;
+    const memory = newDrawMemory();
+    const total = general('football').pairs.length;
     const seen = new Set<string>();
-    for (let i = 0; i < pack.pairs.length; i++) {
-      const pair = drawPair(['football'], used);
+    for (let i = 0; i < total; i++) {
+      const pair = drawPair(['football'], memory);
       expect(pair.packId).toBe('football');
+      expect(pair.themeName).toBeNull();
       expect(seen.has(pair.id)).toBe(false);
       seen.add(pair.id);
     }
-    expect(seen.size).toBe(pack.pairs.length);
-    drawPair(['football'], used);
-    expect(used.size).toBe(1);
+    expect(seen.size).toBe(total);
+    drawPair(['football'], memory);
+    expect(memory.pairs.size).toBe(1);
+  });
+
+  it('évite de reproposer tout de suite un mot déjà vu avec un autre partenaire', () => {
+    const memory = newDrawMemory();
+    const recent: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const pair = drawPair(['animaux'], memory);
+      expect(recent).not.toContain(pair.civil);
+      expect(recent).not.toContain(pair.undercover);
+      recent.push(pair.civil, pair.undercover);
+    }
   });
 
   it('attribue aléatoirement les deux mots aux Civils et aux Undercover', () => {
+    const u = general('animaux');
+    const only = u.pairs[0];
     const sides = new Set<string>();
     for (let i = 0; i < 200; i++) {
-      const used = new Set<string>(PACKS.find((p) => p.id === 'animaux')!.pairs.map((_, j) => `animaux#${j}`));
-      used.delete('animaux#0');
-      sides.add(drawPair(['animaux'], used).civil);
+      const memory = newDrawMemory();
+      for (const pair of u.pairs) if (pair !== only) memory.pairs.add(`animaux/${u.id}/${[pair.a, pair.b].sort().join('+')}`);
+      sides.add(drawPair(['animaux'], memory).civil);
     }
-    expect(sides).toEqual(new Set(['Tigre', 'Lion']));
+    expect(sides).toEqual(new Set([u.words[only.a].word, u.words[only.b].word]));
+  });
+
+  it('en « Thème précis », ne tire que dans l’univers choisi', () => {
+    const lol = PACKS.find((p) => p.id === 'jeux-video')!.universes.find((u) => u.id === 'league-of-legends')!;
+    const allowed = new Set(Object.values(lol.words).map((w) => w.word));
+    const memory = newDrawMemory();
+    for (let i = 0; i < 60; i++) {
+      const pair = drawPair(['jeux-video', 'animaux'], memory, 'jeux-video:league-of-legends');
+      expect(pair.themeName).toBe('League of Legends');
+      expect(allowed.has(pair.civil) && allowed.has(pair.undercover)).toBe(true);
+    }
+    // En partie normale, les univers précis ne sont pas mélangés aux paires générales.
+    const normal = newDrawMemory();
+    for (let i = 0; i < 60; i++) {
+      const pair = drawPair(['jeux-video'], normal);
+      expect(pair.id.startsWith('jeux-video/general/')).toBe(true);
+    }
   });
 });
 

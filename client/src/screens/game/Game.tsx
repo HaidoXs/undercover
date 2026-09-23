@@ -38,7 +38,12 @@ function phaseMeta(view: GameView, round: RoundView): PhaseMeta {
     case 'reveal':
       return { Icon: Eye, title: 'Découverte', sub: manche };
     case 'clues':
-      return { Icon: MessageSquareQuote, title: 'Indices', sub: `${manche} · Tour ${round.cycle}`, tone: 'mint' };
+      return {
+        Icon: MessageSquareQuote,
+        title: 'Indices',
+        sub: round.clueRounds > 1 ? `${manche} · Tour ${round.clueRound}/${round.clueRounds} avant le vote` : `${manche} · Tour ${round.cycle}`,
+        tone: 'mint',
+      };
     case 'vote':
       return { Icon: Vote, title: round.ballot?.runoff ? 'Second scrutin' : 'Vote', sub: `${manche} · Tour ${round.cycle}` };
     case 'power':
@@ -80,6 +85,7 @@ export function GameScreen({ view, onLeft }: { view: GameView; onLeft: () => voi
       <div className="game-grid">
         <div className="stack">
           <StatusBanner view={view} />
+          <TurnBanner view={view} meta={meta} />
           <div key={phaseKey} className="phase-swap stack">
             {view.phase === 'reveal' && <RevealPhase view={view} />}
             {view.phase === 'clues' && <CluesPhase view={view} />}
@@ -97,6 +103,98 @@ export function GameScreen({ view, onLeft }: { view: GameView; onLeft: () => voi
           </aside>
         )}
       </div>
+    </div>
+  );
+}
+
+interface Expectation {
+  who?: PublicPlayer;
+  mine: boolean;
+  title: string;
+  action: string;
+}
+
+/** Qui doit agir, et quoi faire : lisible d'un coup d'œil, en tête de la colonne principale. */
+function expectation(view: GameView): Expectation | null {
+  const round = view.round as RoundView;
+  const pmap = playersById(view);
+  const playing = view.me.status === 'alive';
+  switch (view.phase) {
+    case 'reveal': {
+      const total = view.players.filter((p) => p.status === 'alive').length;
+      if (view.me.secret && !view.me.hasSeen)
+        return { mine: true, title: 'À toi : découvre ta carte', action: 'En secret, puis confirme « J’ai mémorisé ».' };
+      return { mine: false, title: 'Chacun découvre sa carte', action: `${round.seen.length}/${total} joueurs ont mémorisé leur mot.` };
+    }
+    case 'clues': {
+      const who = round.turn ? pmap.get(round.turn.playerId) : undefined;
+      const mime = !!who && round.memeId === who.id;
+      const mine = !!who && who.id === view.me.id && playing;
+      if (mine)
+        return { who, mine, title: mime ? 'À toi de mimer !' : 'À toi de jouer !', action: mime ? 'Mime ton indice sans parler, puis valide.' : 'Écris un indice court, sans dire ton mot.' };
+      if (!who) return { mine: false, title: 'Tour suivant…', action: 'Le prochain joueur arrive.' };
+      return { who, mine, title: `Au tour de ${who.name}`, action: mime ? 'Mime en cours : regarde bien !' : 'Écoute son indice et cherche l’intrus.' };
+    }
+    case 'vote': {
+      const ballot = round.ballot;
+      if (!ballot) return null;
+      const count = `${ballot.voted.length}/${ballot.voters.length} ont voté.`;
+      const canVote = ballot.voters.includes(view.me.id) && view.me.special?.falafel !== 'sabotaged';
+      if (canVote && !ballot.myVote) return { mine: true, title: 'À toi de voter !', action: `Choisis qui éliminer, puis confirme. ${count}` };
+      if (ballot.myVote) return { mine: false, title: 'Vote enregistré', action: `En attente des autres : ${count}` };
+      return { mine: false, title: ballot.runoff ? 'Second scrutin en cours' : 'Vote en cours', action: count };
+    }
+    case 'power': {
+      const power = round.power;
+      if (!power) return null;
+      const who = pmap.get(power.actorId);
+      const mine = power.actorId === view.me.id;
+      const justice = power.kind === 'justice';
+      return {
+        who,
+        mine,
+        title: mine ? (justice ? 'À toi de trancher !' : 'À toi : choisis ta cible') : `${who?.name ?? 'Un joueur'} ${justice ? 'tranche…' : 'choisit sa cible…'}`,
+        action: justice ? 'Désigner l’éliminé parmi les ex æquo.' : 'Emporter un joueur encore en vie.',
+      };
+    }
+    case 'mrwhite': {
+      const attempt = round.mrWhite;
+      if (!attempt || attempt.resolved) return null;
+      const who = pmap.get(attempt.playerId);
+      const mine = attempt.playerId === view.me.id;
+      return mine
+        ? { who, mine, title: 'Dernière chance !', action: 'Devine le mot des Civils : un seul essai.' }
+        : { who, mine, title: `${who?.name ?? 'Mr. White'} tente sa chance`, action: 'S’il trouve le mot des Civils, il gagne.' };
+    }
+    default:
+      return null;
+  }
+}
+
+function TurnBanner({ view, meta }: { view: GameView; meta: PhaseMeta }) {
+  const exp = expectation(view);
+  if (!exp) return null;
+  return (
+    <div key={`${view.phase}-${exp.who?.id ?? ''}-${exp.mine}`} className={cls('turn-banner', exp.mine && 'is-me')} role="status" aria-live="polite">
+      {exp.who ? (
+        <Avatar avatar={exp.who.avatar} photo={exp.who?.photo} size={50} ring={exp.mine ? 'active' : undefined} label="" />
+      ) : (
+        <span className="turn-banner-icon" aria-hidden="true">
+          <meta.Icon size={24} />
+        </span>
+      )}
+      <div className="grow">
+        {exp.mine && <span className="turn-tag">Ton tour</span>}
+        <p className="turn-title">{exp.title}</p>
+        <p className="turn-action">{exp.action}</p>
+      </div>
+      {!exp.mine && exp.who && (
+        <span className="typing" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      )}
     </div>
   );
 }
@@ -186,10 +284,10 @@ function PlayersPanel({ view }: { view: GameView }) {
             aria-label={describe(p)}
           >
             <Avatar
-              avatar={p.avatar}
+              avatar={p.avatar} photo={p?.photo}
               size={44}
               dimmed={p.status === 'eliminated' || !p.connected}
-              ring={p.id === current ? 'mint' : undefined}
+              ring={p.id === current ? 'active' : undefined}
               badge={badgeFor(p)}
               label=""
             />
@@ -250,14 +348,14 @@ export function ClueLog({ view, compact }: { view: GameView; compact?: boolean }
         <div className="clue-log">
           {cycles.slice(0, compact ? 1 : undefined).map((cycle) => (
             <div key={cycle}>
-              <p className="clue-cycle-title">Tour {cycle}</p>
+              <p className="clue-cycle-title">Tour d’indices {cycle}</p>
               {round.clues
                 .filter((c) => c.cycle === cycle)
                 .map((c, i) => {
                   const p = pmap.get(c.playerId);
                   return (
                     <div className="clue" key={`${cycle}-${i}`}>
-                      <Avatar avatar={p?.avatar ?? 0} size={34} label="" dimmed={p?.status === 'eliminated'} />
+                      <Avatar avatar={p?.avatar ?? 0} photo={p?.photo} size={34} label="" dimmed={p?.status === 'eliminated'} />
                       <div className="clue-body">
                         <p className="clue-author">{p?.name ?? 'Joueur parti'}</p>
                         {c.mimed ? (

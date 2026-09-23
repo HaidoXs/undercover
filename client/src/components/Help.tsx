@@ -51,6 +51,7 @@ export function HelpContent({ roles = [], rolesTitle }: { roles?: readonly Speci
         </h3>
         <ul>
           <li>Chacun son tour, dans l’ordre fixé par le serveur, donne un indice court.</li>
+          <li>L’hôte choisit combien de tours d’indices (1 à 5) précèdent chaque vote : avec 2, chacun parle deux fois.</li>
           <li>Interdit de dire son mot. Si le temps s’écoule, le tour est « Passé ».</li>
           <li>Mr. White ne commence jamais le premier tour.</li>
         </ul>
@@ -97,7 +98,7 @@ export function HelpContent({ roles = [], rolesTitle }: { roles?: readonly Speci
             </h3>
             <ul>
               <li>Le serveur compte les votes, applique le Boomerang, puis règle une égalité (Justice ou second scrutin) et la protection d’un falafel.</li>
-              <li>Fou de joie éliminé directement par le scrutin du premier tour : il gagne seul, la manche s’arrête.</li>
+              <li>Fou de joie éliminé directement lors de la première phase de vote (départage compris) : il gagne seul, la manche s’arrête.</li>
               <li>Sinon, les éliminations liées (Amoureux) et la Vengeuse s’enchaînent, chaque pouvoir une seule fois.</li>
               <li>Tout Mr. White éliminé tente alors sa chance, puis on vérifie la victoire du couple, puis celles des camps.</li>
               <li>Si plus personne ne survit sans victoire prioritaire, la manche est nulle. Il n’y a jamais de points.</li>

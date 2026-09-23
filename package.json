@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "concurrently -k -n server,client -c magenta,cyan \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "tsx watch server/index.ts",
+    "dev:server": "tsx watch server/index.ts --public-url=http://localhost:5180",
     "dev:client": "vite",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
@@ -20,15 +20,22 @@
     "start:env": "node --env-file=.env dist/server/index.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@libsql/kysely-libsql": "^0.4.1",
+    "better-auth": "^1.7.5",
     "express": "^5.2.1",
     "helmet": "^8.3.0",
+    "kysely": "^0.29.6",
+    "nodemailer": "^10.0.10",
+    "sharp": "^0.35.4",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "@fontsource-variable/fraunces": "^5.3.0",
-    "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource-variable/fredoka": "^5.3.0",
+    "@fontsource-variable/nunito": "^5.3.0",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

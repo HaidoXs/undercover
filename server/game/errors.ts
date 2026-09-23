@@ -26,6 +26,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   CONFIG_INVALID: 'Configuration invalide.',
   NO_PACK: 'Sélectionne au moins un pack de mots.',
   SETTINGS_LOCKED: 'Les paramètres sont verrouillés pendant la manche.',
+  NO_THEME: 'Aucun thème précis n’est disponible dans les packs sélectionnés.',
+  PHOTO_INVALID: 'Cette photo n’est pas disponible pour ton profil.',
   INTERNAL: 'Erreur inattendue du serveur. Réessaie.',
 };
 

@@ -160,12 +160,13 @@ export const SPECIAL_ROLES: readonly SpecialRoleDef[] = [
     id: 'joyfool',
     name: 'Le Fou de joie',
     icon: 'party-popper',
-    tagline: 'Il rêve de se faire éliminer dès le premier tour.',
+    tagline: 'Il rêve de se faire éliminer dès la première phase de vote.',
     power: 'Il cherche à attirer les soupçons pour être éliminé au plus vite.',
-    objective: 'Se faire éliminer par le vote du premier tour ; sinon, l’objectif de son camp de départ.',
+    objective: 'Se faire éliminer lors de la première phase de vote de la manche ; sinon, l’objectif de son camp de départ.',
     victory:
-      'Éliminé directement par le scrutin du premier tour (second scrutin ou décision de la Justice compris), il gagne seul et la manche s’arrête. S’il survit à ce tour, il gagne avec son camp.',
+      'Éliminé directement lors de la première phase de vote (second scrutin ou décision de la Justice compris), il gagne seul et la manche s’arrête — même si plusieurs tours d’indices l’ont précédée. S’il survit à cette phase, il gagne avec son camp.',
     restrictions: [
+      'Seule la première phase de vote compte, quel que soit le réglage « Tours d’indices avant le vote ».',
       'Une mort par vengeance, par lien amoureux ou par déconnexion ne compte pas.',
       'Une protection de falafel l’empêche d’être éliminé.',
     ],

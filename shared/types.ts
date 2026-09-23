@@ -18,6 +18,19 @@ export interface Settings {
   voteSeconds: number;
   /** Rôles spéciaux activés (tous désactivés par défaut). */
   specialRoles: SpecialRoleId[];
+  /** Tours d'indices joués avant chaque vote (1 à 5). */
+  clueRounds: number;
+  /** « Thème précis » : toutes les paires viennent d'un seul univers (désactivé par défaut). */
+  preciseTheme: boolean;
+  /** Univers choisi (« pack:univers »), null si l'option est désactivée. */
+  themeId: string | null;
+}
+
+/** Univers précis (« Thème précis ») : identifiant global « pack:univers ». */
+export interface UniverseMeta {
+  id: string;
+  name: string;
+  pairCount: number;
 }
 
 export interface PackMeta {
@@ -25,13 +38,17 @@ export interface PackMeta {
   name: string;
   description: string;
   icon: string;
+  /** Paires générales (partie normale). */
   pairCount: number;
+  universes: UniverseMeta[];
 }
 
 export interface PublicPlayer {
   id: string;
   name: string;
   avatar: number;
+  /** Adresse de la photo importée (non listée, identifiant aléatoire), sinon absent. */
+  photo?: string;
   isHost: boolean;
   connected: boolean;
   ready: boolean;
@@ -127,6 +144,8 @@ export interface EndView {
   mrWhiteGuess: string | null;
   /** Raison de la victoire, en clair. */
   reason: string;
+  /** Univers précis de la manche, s'il y en avait un. */
+  themeName: string | null;
   lovers: [string, string] | null;
   duel: { playerIds: [string, string]; winnerId: string | null; draw: boolean } | null;
   falafel: { vendorId: string; targetId: string; effect: 'protect' | 'sabotage'; used: boolean } | null;
@@ -155,7 +174,16 @@ export interface MySpecial {
 export interface RoundView {
   id: string;
   number: number;
+  /** Numéro global du tour d'indices dans la manche (sert à regrouper l'historique). */
   cycle: number;
+  /** Tour d'indices en cours avant le prochain vote (1 à clueRounds). */
+  clueRound: number;
+  /** Tours d'indices avant chaque vote, figés au lancement de la manche. */
+  clueRounds: number;
+  /** Phases de vote commencées dans la manche (un second scrutin n'en ouvre pas une nouvelle). */
+  voteRound: number;
+  /** Univers précis de la manche (public), null en partie normale. */
+  themeName: string | null;
   order: string[];
   turn: { playerId: string; turnId: string } | null;
   clues: ClueEntry[];
@@ -221,6 +249,8 @@ export type ErrorCode =
   | 'CONFIG_INVALID'
   | 'NO_PACK'
   | 'SETTINGS_LOCKED'
+  | 'NO_THEME'
+  | 'PHOTO_INVALID'
   | 'INTERNAL';
 
 export interface ActionError {

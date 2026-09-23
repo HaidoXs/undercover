@@ -18,9 +18,17 @@ export interface SavedSession {
   at: number;
 }
 
+/** Photo importée : `key` prouve la propriété d'une photo d'invité (null si elle appartient à un compte). */
+export interface ProfilePhoto {
+  id: string;
+  url: string;
+  key: string | null;
+}
+
 export interface Profile {
   name: string;
   avatar: number;
+  photo?: ProfilePhoto | null;
 }
 
 const TAB_KEY = 'undercover.tab';
@@ -81,7 +89,9 @@ export const session = {
   },
   getProfile(): Profile | null {
     const p = read<Profile>(local, PROFILE_KEY);
-    return p && typeof p.name === 'string' && Number.isInteger(p.avatar) ? p : null;
+    if (!p || typeof p.name !== 'string' || !Number.isInteger(p.avatar)) return null;
+    const photo = p.photo && typeof p.photo.id === 'string' && typeof p.photo.url === 'string' ? p.photo : null;
+    return { name: p.name, avatar: p.avatar, photo };
   },
   setProfile(value: Profile): void {
     write(local, PROFILE_KEY, value);

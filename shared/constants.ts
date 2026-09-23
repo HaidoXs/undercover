@@ -15,3 +15,12 @@ export const CLUE_SECONDS_OPTIONS = [20, 30, 45, 60, 90] as const;
 export const VOTE_SECONDS_OPTIONS = [30, 45, 60, 90, 120] as const;
 
 export const AVATAR_COUNT = 16;
+
+/** Tours d'indices joués avant chaque vote. */
+export const CLUE_ROUNDS_MIN = 1;
+export const CLUE_ROUNDS_MAX = 5;
+
+/** Photo d'avatar importée : taille maximale du fichier d'origine et côté de l'image réencodée. */
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export const PHOTO_SIZE = 256;
+export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;

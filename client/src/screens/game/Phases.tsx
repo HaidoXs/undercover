@@ -9,10 +9,12 @@ import {
   Sandwich,
   ShieldCheck,
   Swords,
+  Target,
   EyeOff,
   Ghost,
   Hourglass,
   Lock,
+  MessageSquareQuote,
   LogOut,
   RefreshCw,
   Scale,
@@ -23,11 +25,12 @@ import {
   VenetianMask,
   Vote,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { CLUE_MAX, GUESS_MAX } from '../../../../shared/constants';
 import type { GameView, PublicPlayer, Role, RoundView } from '../../../../shared/types';
 import { Avatar } from '../../components/Avatar';
 import { FormError, RoleChip, Spinner } from '../../components/Chrome';
+import { CivilsArt, Confetti, GhostArt, HeartsArt, MaskArt, PartyArt, RoleArt } from '../../components/Illustrations';
 import { SecretCard, SecretPeek, useConcealOnLeave } from '../../components/Secret';
 import { ProgressBar } from '../../components/Timer';
 import { useCountdown } from '../../hooks/time';
@@ -50,6 +53,38 @@ function Seconds({ view, prefix }: { view: GameView; prefix: string }) {
   );
 }
 
+/** Univers précis de la manche, connu de tous. */
+function ThemeBadge({ name }: { name: string }) {
+  return (
+    <p className="theme-badge">
+      <Target size={15} aria-hidden="true" /> Thème précis : <strong>{name}</strong>
+    </p>
+  );
+}
+
+/** « Tour d’indices 1/2 — vote ensuite » : où en est le bloc de tours avant le prochain vote. */
+function RoundProgress({ round }: { round: RoundView }) {
+  const { clueRound, clueRounds } = round;
+  const left = clueRounds - clueRound;
+  const text =
+    clueRounds === 1
+      ? 'Un tour d’indices — vote ensuite'
+      : `Tour d’indices ${clueRound}/${clueRounds} — ${left === 0 ? 'vote ensuite' : `encore ${left} tour${left > 1 ? 's' : ''} avant le vote`}`;
+  return (
+    <div className="round-progress" role="status" aria-live="polite">
+      <span className="round-dots" aria-hidden="true">
+        {Array.from({ length: clueRounds }, (_, i) => (
+          <i key={i} className={cls(i < clueRound - 1 && 'is-done', i === clueRound - 1 && 'is-now')} />
+        ))}
+        <b>
+          <Vote size={13} />
+        </b>
+      </span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
 // ───────────────────────── 4. découverte privée du mot
 
 export function RevealPhase({ view }: { view: GameView }) {
@@ -68,8 +103,10 @@ export function RevealPhase({ view }: { view: GameView }) {
   if (!secret) {
     return (
       <section className="card center stack">
+        <MaskArt className="art-float center-art" size={96} />
         <p className="eyebrow">Manche {round.number}</p>
         <h2 className="display h2">Les joueurs découvrent leur carte</h2>
+        {round.themeName && <ThemeBadge name={round.themeName} />}
         <p className="muted">
           {seenCount}/{participants.length} ont mémorisé leur mot.
         </p>
@@ -86,12 +123,13 @@ export function RevealPhase({ view }: { view: GameView }) {
   };
 
   return (
-    <section className="card card-glow stack center" aria-labelledby="reveal-title">
+    <section className="card card-feature stack center" aria-labelledby="reveal-title">
       <div className="stack-sm">
         <p className="eyebrow">Carte secrète · Manche {round.number}</p>
         <h2 id="reveal-title" className="display h2">
           Découvre ton mot
         </h2>
+        {round.themeName && <ThemeBadge name={round.themeName} />}
         <p className="muted">Vérifie que personne ne regarde ton écran, puis retourne la carte.</p>
       </div>
 
@@ -106,9 +144,9 @@ export function RevealPhase({ view }: { view: GameView }) {
       {revealed && <MyRolePanel view={view} />}
       {revealed && <FalafelPicker view={view} />}
 
-      <div className="stack-sm">
+      <div className="stack-sm sticky-cta">
         {revealed && (
-          <button type="button" className="btn btn-ghost btn-block" onClick={hide}>
+          <button type="button" className="btn btn-secondary btn-block" onClick={hide}>
             <EyeOff size={18} /> Masquer ma carte
           </button>
         )}
@@ -140,36 +178,12 @@ export function RevealPhase({ view }: { view: GameView }) {
 
 export function CluesPhase({ view }: { view: GameView }) {
   const round = roundOf(view);
-  const pmap = playersById(view);
   const currentId = round.turn?.playerId;
-  const current = currentId ? pmap.get(currentId) : undefined;
   const myTurn = currentId === view.me.id && canPlay(view);
   const doneThisCycle = new Map(round.clues.filter((c) => c.cycle === round.cycle).map((c) => [c.playerId, c]));
 
   return (
     <>
-      <div className={cls('expect-line', myTurn && 'is-me')} role="status" aria-live="polite">
-        {current && <Avatar avatar={current.avatar} size={36} ring={myTurn ? 'mint' : undefined} label="" />}
-        <span className="grow">
-          {myTurn
-            ? round.memeId === view.me.id
-              ? 'À toi de mimer ton indice !'
-              : 'À toi de jouer : donne ton indice !'
-            : current
-              ? round.memeId === current.id
-                ? `Mime en cours : ${current.name}`
-                : `Au tour de ${current.name}`
-              : 'Tour suivant…'}
-        </span>
-        {!myTurn && (
-          <span className="typing" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-        )}
-      </div>
-
       {myTurn && round.turn && round.memeId !== view.me.id && <ClueForm view={view} turnId={round.turn.turnId} />}
       {myTurn && round.turn && round.memeId === view.me.id && <MemeForm view={view} turnId={round.turn.turnId} />}
       {view.me.secret && canPlay(view) && <SecretPeek secret={view.me.secret} extra={<MyRolePanel view={view} />} />}
@@ -183,6 +197,7 @@ export function CluesPhase({ view }: { view: GameView }) {
             {doneThisCycle.size}/{round.order.length}
           </span>
         </div>
+        <RoundProgress round={round} />
         <ClueTrack view={view} currentId={currentId} done={doneThisCycle} />
       </section>
     </>
@@ -248,7 +263,13 @@ function ClueTrack({
           <li
             key={id}
             data-player={id}
-            className={cls('clue-card', isCurrent && 'is-current', round.memeId === id && 'is-meme', !clue && !isCurrent && 'is-upcoming')}
+            className={cls(
+              'clue-card',
+              isCurrent && 'is-current',
+              id === view.me.id && 'is-mine',
+              round.memeId === id && 'is-meme',
+              !clue && !isCurrent && 'is-upcoming',
+            )}
             aria-current={isCurrent ? 'step' : undefined}
             aria-label={`${i + 1}. ${p?.name ?? 'Joueur'}${id === view.me.id ? ' (toi)' : ''}, ${state}`}
           >
@@ -256,17 +277,21 @@ function ClueTrack({
               {i + 1}
             </span>
             <Avatar
-              avatar={p?.avatar ?? 0}
+              avatar={p?.avatar ?? 0} photo={p?.photo}
               size={40}
               label=""
-              ring={isCurrent ? 'mint' : undefined}
+              ring={isCurrent ? 'active' : undefined}
               dimmed={!p?.connected}
               badge={!p?.connected ? 'offline' : null}
             />
             <span className="cc-name" aria-hidden="true">
               {p?.name}
-              {id === view.me.id && ' (toi)'}
             </span>
+            {id === view.me.id && (
+              <span className="cc-me" aria-hidden="true">
+                toi
+              </span>
+            )}
             <span className="cc-body" aria-hidden="true">
               {clue ? (
                 clue.mimed ? (
@@ -334,8 +359,8 @@ function ClueForm({ view, turnId }: { view: GameView; turnId: string }) {
 
   return (
     <form className="card my-turn stack-sm" onSubmit={submit} noValidate aria-labelledby={`${id}-t`}>
-      <h2 id={`${id}-t`} className="h3">
-        Ton indice
+      <h2 id={`${id}-t`} className="h3 row">
+        <MessageSquareQuote size={20} aria-hidden="true" /> Ton indice
       </h2>
       <p className="subtle">Un mot ou une courte expression. Interdit de donner ton mot exact.</p>
       <div className="input-wrap">
@@ -395,7 +420,7 @@ export function VotePhase({ view }: { view: GameView }) {
 
   return (
     <>
-      <section className="card card-glow stack" aria-labelledby="vote-title">
+      <section className="card card-feature stack" aria-labelledby="vote-title">
         <div className="stack-sm">
           <p className="eyebrow">{ballot.runoff ? 'Égalité à départager' : `Tour ${round.cycle}`}</p>
           <h2 id="vote-title" className="display h2">
@@ -420,12 +445,14 @@ export function VotePhase({ view }: { view: GameView }) {
           </div>
         ) : ballot.myVote ? (
           <div className="locked-vote" role="status">
-            <Avatar avatar={pmap.get(ballot.myVote)?.avatar ?? 0} size={48} label="" />
+            <Avatar avatar={pmap.get(ballot.myVote)?.avatar ?? 0} photo={pmap.get(ballot.myVote)?.photo} size={52} label="" />
             <div className="grow">
               <strong>Vote enregistré contre {pmap.get(ballot.myVote)?.name}</strong>
               <p className="subtle">Ton choix est définitif et reste secret jusqu’à la clôture.</p>
             </div>
-            <Lock size={20} className="accent-mint" />
+            <span className="stamp" aria-hidden="true">
+              <Lock size={14} strokeWidth={2.8} /> A voté
+            </span>
           </div>
         ) : (
           <>
@@ -443,8 +470,12 @@ export function VotePhase({ view }: { view: GameView }) {
                     onClick={() => setTarget(id)}
                     aria-label={self ? `${p?.name} (toi, impossible)` : `Voter contre ${p?.name}`}
                   >
-                    {target === id && <Crosshair size={18} className="target-mark" aria-hidden="true" />}
-                    <Avatar avatar={p?.avatar ?? 0} size={56} label="" dimmed={self} />
+                    {target === id && (
+                      <span className="target-mark" aria-hidden="true">
+                        <Crosshair size={14} strokeWidth={2.8} /> Ton choix
+                      </span>
+                    )}
+                    <Avatar avatar={p?.avatar ?? 0} photo={p?.photo} size={60} label="" dimmed={self} />
                     <span className="vc-name">
                       {p?.name}
                       {self && ' (toi)'}
@@ -454,10 +485,12 @@ export function VotePhase({ view }: { view: GameView }) {
                 );
               })}
             </div>
-            <button type="button" className="btn btn-primary btn-lg btn-block" disabled={!target || busy} onClick={submit}>
-              {busy ? <Spinner /> : <Vote size={20} />}
-              {target ? `Voter contre ${pmap.get(target)?.name}` : 'Choisis un joueur'}
-            </button>
+            <div className="sticky-cta">
+              <button type="button" className="btn btn-danger-solid btn-lg btn-block" disabled={!target || busy} onClick={submit}>
+                {busy ? <Spinner /> : <Vote size={20} />}
+                {target ? `Voter contre ${pmap.get(target)?.name}` : 'Choisis un joueur'}
+              </button>
+            </div>
           </>
         )}
       </section>
@@ -478,7 +511,7 @@ export function VotePhase({ view }: { view: GameView }) {
             return (
               <span key={id} className="voter" title={`${p?.name} ${has ? 'a voté' : 'n’a pas encore voté'}`}>
                 <Avatar
-                  avatar={p?.avatar ?? 0}
+                  avatar={p?.avatar ?? 0} photo={p?.photo}
                   size={40}
                   dimmed={!has}
                   badge={has ? 'check' : !p?.connected ? 'offline' : null}
@@ -514,15 +547,19 @@ export function ResultPhase({ view }: { view: GameView }) {
 
   return (
     <>
-      <section className="card card-glow" aria-live="polite">
+      <section className="card card-feature" aria-live="polite">
         {outcome.type === 'eliminated' && (
           <div className="verdict">
             <p className="eyebrow">{result.runoff ? 'Second scrutin' : 'Le groupe a tranché'}</p>
             <div className="verdict-avatar">
-              <Avatar avatar={pmap.get(outcome.playerId)?.avatar ?? 0} size={104} badge="out" label="" />
+              <Avatar avatar={pmap.get(outcome.playerId)?.avatar ?? 0} photo={pmap.get(outcome.playerId)?.photo} size={104} label="" />
+              <span className="stamp stamp-out" aria-hidden="true">
+                Éliminé
+              </span>
             </div>
             <p className="verdict-name">{pmap.get(outcome.playerId)?.name}</p>
-            <div className="verdict-role stack-sm" style={{ alignItems: 'center' }}>
+            <div className={cls('verdict-role', `role-${outcome.role}`)}>
+              <RoleArt role={outcome.role} className="verdict-role-art" size={outcome.role === 'mrwhite' ? 52 : 70} />
               <span className="muted">était</span>
               <RoleChip role={outcome.role} large />
             </div>
@@ -531,14 +568,14 @@ export function ResultPhase({ view }: { view: GameView }) {
         )}
         {(outcome.type === 'tie' || outcome.type === 'tie-persist') && (
           <div className="verdict">
-            <span className="state-icon" aria-hidden="true">
-              <Scale size={32} />
+            <span className="state-icon tone-yellow" aria-hidden="true">
+              <Scale size={34} strokeWidth={2.3} />
             </span>
             <h2 className="display h2">{outcome.type === 'tie' ? 'Égalité !' : 'Égalité persistante'}</h2>
             <div className="tie-avatars">
               {outcome.tied.map((id) => (
                 <div key={id} className="stack-sm" style={{ alignItems: 'center' }}>
-                  <Avatar avatar={pmap.get(id)?.avatar ?? 0} size={64} label="" />
+                  <Avatar avatar={pmap.get(id)?.avatar ?? 0} photo={pmap.get(id)?.photo} size={64} label="" />
                   <strong>{pmap.get(id)?.name}</strong>
                 </div>
               ))}
@@ -552,8 +589,8 @@ export function ResultPhase({ view }: { view: GameView }) {
         )}
         {outcome.type === 'protected' && (
           <div className="verdict">
-            <span className="state-icon" aria-hidden="true">
-              <ShieldCheck size={32} />
+            <span className="state-icon tone-mint" aria-hidden="true">
+              <ShieldCheck size={34} strokeWidth={2.3} />
             </span>
             <h2 className="display h2">Falafel protecteur !</h2>
             <p className="muted">
@@ -563,8 +600,8 @@ export function ResultPhase({ view }: { view: GameView }) {
         )}
         {outcome.type === 'no-votes' && (
           <div className="verdict">
-            <span className="state-icon" aria-hidden="true">
-              <Hourglass size={32} />
+            <span className="state-icon tone-sky" aria-hidden="true">
+              <Hourglass size={34} strokeWidth={2.3} />
             </span>
             <h2 className="display h2">Aucun vote exprimé</h2>
             <p className="muted">Personne n’est éliminé. Nouveau tour d’indices !</p>
@@ -595,7 +632,7 @@ export function ResultPhase({ view }: { view: GameView }) {
               const p = pmap.get(t.playerId);
               return (
                 <div key={t.playerId} className="tally-row">
-                  <Avatar avatar={p?.avatar ?? 0} size={30} label="" />
+                  <Avatar avatar={p?.avatar ?? 0} photo={p?.photo} size={30} label="" />
                   <div className="tally-bar">
                     <span style={{ width: `${(t.votes / max) * 100}%`, opacity: t.votes ? 1 : 0 }} />
                     <em>{p?.name}</em>
@@ -612,7 +649,7 @@ export function ResultPhase({ view }: { view: GameView }) {
               const target = v.targetId ? pmap.get(v.targetId) : null;
               return (
                 <span key={v.voterId} className="ballot-chip">
-                  <Avatar avatar={voter?.avatar ?? 0} size={22} label="" />
+                  <Avatar avatar={voter?.avatar ?? 0} photo={voter?.photo} size={22} label="" />
                   {voter?.name} → {target ? target.name : <em>abstention</em>}
                 </span>
               );
@@ -651,10 +688,8 @@ export function MrWhitePhase({ view }: { view: GameView }) {
   };
 
   return (
-    <section className="card card-glow center stack" aria-live="polite">
-      <span className="ghost-orb" aria-hidden="true">
-        <Ghost size={48} />
-      </span>
+    <section className="card card-feature center stack" aria-live="polite">
+      <GhostArt className="art-float center-art" size={96} />
       {!attempt.resolved ? (
         isMe ? (
           <form className="stack" onSubmit={submit} noValidate>
@@ -695,7 +730,7 @@ export function MrWhitePhase({ view }: { view: GameView }) {
         <div className="stack-sm">
           <p className="eyebrow">Tentative de Mr. White</p>
           <h2 className="display h2 row" style={{ justifyContent: 'center' }}>
-            <CircleX size={28} style={{ color: 'var(--coral)' }} /> Raté !
+            <CircleX size={30} className="accent-coral" aria-hidden="true" /> Raté !
           </h2>
           <p className="muted">
             {attempt.guess ? (
@@ -716,13 +751,21 @@ export function MrWhitePhase({ view }: { view: GameView }) {
 
 // ───────────────────────── 9. fin de manche et revanche
 
-const VICTORY: Record<string, { title: string; icon: typeof Users }> = {
-  civils: { title: 'Victoire des Civils', icon: Users },
-  intrus: { title: 'Victoire des intrus', icon: VenetianMask },
-  mrwhite: { title: 'Mr. White l’emporte !', icon: Ghost },
-  lovers: { title: 'Victoire des Amoureux', icon: HeartHandshake },
-  joyfool: { title: 'Le Fou de joie l’emporte !', icon: PartyPopper },
-  draw: { title: 'Manche nulle', icon: Swords },
+const VICTORY: Record<string, { title: string; icon: typeof Users; art: ReactNode }> = {
+  civils: { title: 'Victoire des Civils', icon: Users, art: <CivilsArt size={130} /> },
+  intrus: { title: 'Victoire des intrus', icon: VenetianMask, art: <MaskArt size={150} /> },
+  mrwhite: { title: 'Mr. White l’emporte !', icon: Ghost, art: <GhostArt size={96} /> },
+  lovers: { title: 'Victoire des Amoureux', icon: HeartHandshake, art: <HeartsArt size={130} /> },
+  joyfool: { title: 'Le Fou de joie l’emporte !', icon: PartyPopper, art: <PartyArt size={120} /> },
+  draw: {
+    title: 'Manche nulle',
+    icon: Swords,
+    art: (
+      <span className="state-icon tone-sky big">
+        <Swords size={46} strokeWidth={2.2} />
+      </span>
+    ),
+  },
 };
 
 export function EndPhase({ view }: { view: GameView }) {
@@ -757,25 +800,20 @@ export function EndPhase({ view }: { view: GameView }) {
 
   return (
     <>
-      <section className={cls('card card-glow victory', `side-${end.winnerSide}`)} aria-live="polite">
-        <div className="sparkles" aria-hidden="true">
-          {Array.from({ length: 14 }, (_, i) => (
-            <i key={i} style={{ left: `${6 + i * 6.6}%`, top: `${-4 - (i % 3) * 6}%`, animationDelay: `${(i % 7) * 0.32}s` }} />
-          ))}
+      <section className={cls('card victory', `side-${end.winnerSide}`)} aria-live="polite">
+        {iWon && end.winnerSide !== 'draw' && <Confetti />}
+        <div className="victory-art" aria-hidden="true">
+          {v.art}
         </div>
-        <div className="trophy" aria-hidden="true">
-          <Trophy size={42} />
-        </div>
-        <p className="eyebrow row" style={{ justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+        <p className="eyebrow row" style={{ justifyContent: 'center' }}>
           <v.icon size={14} /> Manche {round.number} terminée
         </p>
-        <h2 className="display" style={{ marginTop: 6 }}>
-          {v.title}
-        </h2>
+        <h2 className="display victory-title">{v.title}</h2>
         <p className="muted" style={{ marginTop: 8 }}>
           {end.reason}
         </p>
-        <p className="muted" style={{ marginTop: 4 }}>
+        <p className={cls('personal', iWon ? 'is-win' : myRole && end.winnerSide !== 'draw' && 'is-loss')}>
+          {iWon && <Trophy size={18} aria-hidden="true" />}
           {personal}
         </p>
         {end.winnerSide === 'mrwhite' && end.mrWhiteGuess && (
@@ -785,12 +823,34 @@ export function EndPhase({ view }: { view: GameView }) {
         )}
       </section>
 
+      <div className="stack-sm replay-block">
+        {isHost ? (
+          <button type="button" className="btn btn-primary btn-xl btn-block" onClick={replay} disabled={busy}>
+            {busy ? <Spinner /> : <RefreshCw size={22} strokeWidth={2.6} />} Rejouer avec le même groupe
+          </button>
+        ) : (
+          <div className="notice notice-violet" role="status">
+            <Hourglass size={18} />
+            <span>En attente de l’hôte pour lancer la revanche. Le salon et les paramètres sont conservés.</span>
+          </div>
+        )}
+        <button
+          type="button"
+          className="btn btn-quiet btn-block"
+          onClick={async () => {
+            const res = await leaveRoom();
+            if (res.ok) window.location.assign('/');
+          }}
+        >
+          <LogOut size={18} /> Quitter le salon
+        </button>
+      </div>
       <section className="card card-tight stack-sm" aria-labelledby="words-title">
         <div className="row-between">
           <h2 id="words-title" className="card-title">
             <Lock size={18} /> Les mots secrets
           </h2>
-          <span className="pill">{end.packName}</span>
+          <span className="pill">{end.themeName ?? end.packName}</span>
         </div>
         <div className="words-reveal">
           <div className="word-tile role-civil">
@@ -826,7 +886,7 @@ export function EndPhase({ view }: { view: GameView }) {
             const out = eliminatedAt.get(playerId);
             return (
               <li key={playerId} className={cls('final-row', won && 'is-winner')} style={{ animationDelay: `${0.05 * i}s` }}>
-                <Avatar avatar={p?.avatar ?? 0} size={40} label="" dimmed={out !== undefined} />
+                <Avatar avatar={p?.avatar ?? 0} photo={p?.photo} size={40} label="" dimmed={out !== undefined} />
                 <div className="grow">
                   <div className="player-name">
                     {p?.name ?? 'Joueur parti'}
@@ -838,7 +898,11 @@ export function EndPhase({ view }: { view: GameView }) {
                   <RoleChip role={role} />
                   {special && <SpecialChip id={special} />}
                 </span>
-                {won && <Trophy size={18} className="win-mark" aria-label="Gagnant" />}
+                {won && (
+                  <span className="win-mark" role="img" aria-label="Gagnant">
+                    <Trophy size={15} aria-hidden="true" />
+                  </span>
+                )}
               </li>
             );
           })}
@@ -878,28 +942,6 @@ export function EndPhase({ view }: { view: GameView }) {
         </section>
       )}
 
-      <div className="stack-sm">
-        {isHost ? (
-          <button type="button" className="btn btn-primary btn-lg btn-block" onClick={replay} disabled={busy}>
-            {busy ? <Spinner /> : <RefreshCw size={20} />} Rejouer avec le même groupe
-          </button>
-        ) : (
-          <div className="notice notice-violet" role="status">
-            <Hourglass size={18} />
-            <span>En attente de l’hôte pour lancer la revanche. Le salon et les paramètres sont conservés.</span>
-          </div>
-        )}
-        <button
-          type="button"
-          className="btn btn-quiet btn-block"
-          onClick={async () => {
-            const res = await leaveRoom();
-            if (res.ok) window.location.assign('/');
-          }}
-        >
-          <LogOut size={18} /> Quitter le salon
-        </button>
-      </div>
     </>
   );
 }

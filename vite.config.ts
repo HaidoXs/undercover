@@ -19,6 +19,7 @@ export default defineConfig({
     proxy: {
       '/socket.io': { target: `http://localhost:${backendPort}`, ws: true },
       '/api': { target: `http://localhost:${backendPort}` },
+      '/media': { target: `http://localhost:${backendPort}` },
     },
   },
 });

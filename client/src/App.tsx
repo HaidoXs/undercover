@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Backdrop, ConnectionBanner, Toasts } from './components/Chrome';
+import { ResetPasswordScreen } from './components/Account';
 import { RoleSheetHost } from './components/RoleInfo';
 import { session } from './net/session';
 import { FatalScreen, Home, JoinCode, JoinFlow, LoadingScreen, ProfileForm } from './screens/Entry';
 import { RoomScreen } from './screens/Room';
 import { setState, useApp } from './state/store';
 
-type Route = { name: 'home' } | { name: 'create' } | { name: 'code' } | { name: 'join'; code: string };
+type Route = { name: 'home' } | { name: 'create' } | { name: 'code' } | { name: 'join'; code: string } | { name: 'reset' };
 
 function parsePath(): Route {
   const match = window.location.pathname.match(/^\/r\/([A-Za-z0-9]{1,12})\/?$/);
   if (match) return { name: 'join', code: match[1].toUpperCase() };
+  if (window.location.pathname === '/reinitialiser') return { name: 'reset' };
   return { name: 'home' };
 }
 
 function pathFor(route: Route): string {
+  if (route.name === 'reset') return window.location.pathname + window.location.search;
   return route.name === 'join' ? `/r/${route.code}` : '/';
 }
 
@@ -98,6 +101,9 @@ export function App() {
         break;
       case 'join':
         content = <JoinFlow key={route.code} code={route.code} onBack={goHome} onRetry={() => navigate({ name: 'code' })} />;
+        break;
+      case 'reset':
+        content = <ResetPasswordScreen onHome={goHome} />;
         break;
     }
   }

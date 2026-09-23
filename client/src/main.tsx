@@ -1,14 +1,16 @@
-import '@fontsource-variable/manrope';
-import '@fontsource-variable/fraunces/opsz.css';
+import '@fontsource-variable/nunito';
+import '@fontsource-variable/fredoka';
 import './styles/app.css';
 import './styles/roles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { installAudioUnlock } from './lib/sound';
+import { startAccount } from './net/account';
 import { startConnection } from './net/controller';
 
 startConnection();
+void startAccount();
 installAudioUnlock();
 
 createRoot(document.getElementById('root') as HTMLElement).render(

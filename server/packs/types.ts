@@ -1,20 +1,42 @@
+/**
+ * Organisation du contenu : pack → univers → mots → paires.
+ *
+ * - Un pack (« Jeux vidéo ») contient un univers général (precise: false), tiré en partie normale,
+ *   et éventuellement des univers précis (« League of Legends »), proposés par l'option « Thème précis ».
+ * - Chaque mot est décrit une seule fois dans son univers ; les paires référencent les mots par clé.
+ *   Un même mot peut ainsi avoir plusieurs partenaires choisis à la main (jamais toutes les combinaisons).
+ * - Le serveur tire au sort quel mot de la paire revient aux Civils.
+ */
+
 export interface WordEntry {
   word: string;
   /**
    * Courte description factuelle, montrée uniquement au joueur qui reçoit ce mot.
-   * Ne jamais y citer l'autre mot de la paire ni suggérer un rôle.
+   * Même ton et même niveau de détail pour tous les mots ; jamais de comparaison
+   * avec un autre mot, jamais d'allusion à un camp ou à un rôle.
    */
   description: string;
 }
 
-export interface WordPair {
+export interface PairDef {
+  /** Clés de deux mots du même univers. L'ordre est sans importance. */
+  a: string;
+  b: string;
   /**
-   * Thème commun aux deux mots, montré uniquement à Mr. White.
-   * Plus précis que le nom du pack, mais sans mot, initiale, longueur ni description évidente.
+   * Thème commun, montré uniquement à Mr. White. Large : une catégorie, jamais une quasi-réponse.
+   * En univers précis, il ne répète pas le nom de l'univers (déjà connu de tous).
    */
   theme: string;
-  a: WordEntry;
-  b: WordEntry;
+}
+
+export interface Universe {
+  /** Identifiant stable, unique dans le pack (utilisé dans les paramètres du salon). */
+  id: string;
+  name: string;
+  /** true : univers proposé en « Thème précis » · false : paires générales du pack. */
+  precise: boolean;
+  words: Readonly<Record<string, WordEntry>>;
+  pairs: readonly PairDef[];
 }
 
 export interface WordPack {
@@ -24,19 +46,23 @@ export interface WordPack {
   description: string;
   /** Nom d'icône Lucide en kebab-case, résolu côté client (voir client/src/components/icons.ts). */
   icon: string;
-  /**
-   * Paires de mots proches. L'ordre à l'intérieur d'une paire est sans importance :
-   * le serveur tire au sort quel mot revient aux Civils.
-   * Ajouter des paires en fin de liste pour garder des identifiants stables.
-   */
-  pairs: readonly WordPair[];
+  universes: readonly Universe[];
 }
 
 export function definePack(pack: WordPack): WordPack {
   return pack;
 }
 
-/** Écriture compacte : pair('Univers ninja', ['Naruto', '…'], ['Sasuke', '…']). */
-export function pair(theme: string, a: readonly [string, string], b: readonly [string, string]): WordPair {
-  return { theme, a: { word: a[0], description: a[1] }, b: { word: b[0], description: b[1] } };
+export function universe(u: Universe): Universe {
+  return u;
+}
+
+/** Écriture compacte d'un mot : w('Mana', 'Ressource bleue…'). */
+export function w(word: string, description: string): WordEntry {
+  return { word, description };
+}
+
+/** Écriture compacte d'une paire : p('mana', 'energie', 'Ressources des champions'). */
+export function p(a: string, b: string, theme: string): PairDef {
+  return { a, b, theme };
 }

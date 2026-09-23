@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import type { GameView, PackMeta, Settings } from '../../../shared/types';
 import { getState, setState, toast } from '../state/store';
-import { session } from './session';
+import { session, type ProfilePhoto } from './session';
 
 export const socket = io({
   autoConnect: false,
@@ -142,25 +142,39 @@ export function startConnection(): void {
 
 // ───────────────────────── actions
 
-function persist(code: string, token: string, name: string, avatar: number): void {
+function persist(code: string, token: string, name: string, avatar: number, photo: ProfilePhoto | null): void {
   session.setTab({ code, token });
   session.save(code, { token, name, avatar, at: Date.now() });
-  session.setProfile({ name, avatar });
+  session.setProfile({ name, avatar, photo });
 }
 
-export async function createRoom(name: string, avatar: number) {
-  const res = await call<{ code: string; token: string }>('room:create', { name, avatar });
-  if (res.ok) persist(res.code, res.token, name, avatar);
+function photoPayload(photo: ProfilePhoto | null) {
+  return { photo: photo?.id ?? null, photoKey: photo?.key ?? undefined };
+}
+
+export async function createRoom(name: string, avatar: number, photo: ProfilePhoto | null = null) {
+  const res = await call<{ code: string; token: string }>('room:create', { name, avatar, ...photoPayload(photo) });
+  if (res.ok) persist(res.code, res.token, name, avatar, photo);
   return res;
 }
 
 export function checkRoom(code: string) {
-  return call<{ code: string; players: number; inProgress: boolean; takenAvatars: number[] }>('room:check', { code });
+  return call<{ code: string; players: number; inProgress: boolean; takenAvatars: number[]; mine: boolean }>('room:check', { code });
 }
 
-export async function joinRoom(code: string, name: string, avatar: number) {
-  const res = await call<{ code: string; token: string }>('room:join', { code, name, avatar });
-  if (res.ok) persist(res.code, res.token, name, avatar);
+export async function joinRoom(code: string, name: string, avatar: number, photo: ProfilePhoto | null = null) {
+  const res = await call<{ code: string; token: string }>('room:join', { code, name, avatar, ...photoPayload(photo) });
+  if (res.ok) persist(res.code, res.token, name, avatar, photo);
+  return res;
+}
+
+/** Reprend la place liée au compte connecté (autre appareil, onglet fermé). */
+export async function resumeWithAccount(code: string) {
+  const res = await call<{ code: string; token: string; name: string; avatar: number }>('session:resume-account', { code });
+  if (res.ok) {
+    session.setTab({ code: res.code, token: res.token });
+    session.save(res.code, { token: res.token, name: res.name, avatar: res.avatar, at: Date.now() });
+  }
   return res;
 }
 
@@ -195,7 +209,7 @@ export async function leaveRoom() {
 export const game = {
   ready: (ready: boolean) => call('lobby:ready', { ready }),
   settings: (patch: Partial<Settings>) => call('lobby:settings', { patch }),
-  profile: (patch: { name?: string; avatar?: number }) => call('lobby:profile', patch),
+  profile: (patch: { name?: string; avatar?: number; photo?: string | null; photoKey?: string }) => call('lobby:profile', patch),
   start: () => call('game:start'),
   seen: (roundId: string) => call('game:seen', { roundId }),
   clue: (turnId: string, text: string) => call('game:clue', { turnId, text }),
